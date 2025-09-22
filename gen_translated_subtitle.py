@@ -84,10 +84,7 @@ YCbCr Matrix: TV.601
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,2,2,2,30,30,40,1
-Style: Highlight,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,2,2,2,30,30,40,1
-Style: MultiLineDefault,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,1,1,2,2,30,30,40,1
-Style: MultiLineHighlight,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,1,1,2,2,30,30,40,1
+Style: Default,Arial,12,&H0000FFFF,&H0000FFFF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,0,0,2,10,10,20,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -114,8 +111,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         #   - 这里假设所有中文字符宽度为fontsize，英文及数字为fontsize*0.5
         # --------------------------------------------------------------------
         # 1. 设定边距和字体大小
-        margin_l = margin_r = 30
-        fontsize = 12
+        margin_l = margin_r = 10
+        fontsize = 40
 
         # 2. 计算可用显示宽度（像素）
         available_width = video_width - margin_l - margin_r
@@ -125,7 +122,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         lines = split_text_chinese(text, max_line_width, fontsize)
         text = r"\N".join(lines)  # ASS换行符
 
-        ass_content += f"Dialogue: 0,{start_time},{end_time},{default_style},,0,0,0,,{text}\n"
+        ass_content += f"Dialogue: 0,{start_time},{end_time},{default_style},,10,10,20,,{text}\n"
     
     return ass_content
 
@@ -152,25 +149,39 @@ def split_text_chinese(text, max_width, fontsize):
     lines = []
     current_line = ""
     current_width = 0
+    chinese_char_count = 0  # 中文字符计数
+    
     for char in text:
         # 判断是否为中文字符
         if '\u4e00' <= char <= '\u9fff':
+            chinese_char_count += 1
             char_w = fontsize
         elif char == '\n':
             lines.append(current_line)
             current_line = ""
             current_width = 0
+            chinese_char_count = 0
             continue
         else:
             char_w = fontsize * 0.5
-        if current_width + char_w > max_width:
+        
+        # 检查是否超过15个中文字符
+        if chinese_char_count > 15:
             if current_line:
                 lines.append(current_line)
             current_line = char
             current_width = char_w
+            chinese_char_count = 1 if '\u4e00' <= char <= '\u9fff' else 0
+        elif current_width + char_w > max_width:
+            if current_line:
+                lines.append(current_line)
+            current_line = char
+            current_width = char_w
+            chinese_char_count = 1 if '\u4e00' <= char <= '\u9fff' else 0
         else:
             current_line += char
             current_width += char_w
+    
     if current_line:
         lines.append(current_line)
     return lines
