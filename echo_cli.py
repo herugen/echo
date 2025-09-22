@@ -17,10 +17,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # 导入所有任务模块
 from download_video import download_video
+from extract_video_format import extract_video_format
 from extract_audio import extract_audio
 from speech_to_text import speech_to_text
 from gen_subtitle import gen_subtitle
+from gen_translated_subtitle import gen_translated_subtitle
 from add_subtitle import add_subtitle_to_video
+from add_translated_subtitle import add_translated_subtitle_to_video
 from translate_text import translate_text
 from split_audio import split_audio_by_subtitle
 from generate_tts import generate_tts_audio
@@ -35,20 +38,21 @@ async def check_task_status(task_id: str):
     # 定义任务检查顺序和对应的步骤名
     task_checks = [
         ("download", "下载视频", "download_video"),
+        ("extract_video_format", "提取视频格式", "extract_video_format"),
         ("extract_audio", "提取音频", "extract_audio"),
         ("speech_to_text", "语音识别", "speech_to_text"),
+        ("split_audio", "分割音频", "split_audio"),
+        ("gen_subtitle", "生成字幕", "gen_subtitle"),
+        ("add_subtitle", "生成字幕视频", "add_subtitle"),
+        ("translate_text", "文本翻译", "translate_text"),
+        ("gen_translated_subtitle", "生成翻译后的字幕", "gen_translated_subtitle"),
+        ("add_translated_subtitle", "生成翻译后的字幕视频", "add_translated_subtitle"),
+        ("generate_tts", "TTS生成", "generate_tts"),
+        ("replace_audio", "音频替换", "replace_audio")
     ]
     
     completed_tasks = []
-    missing_tasks = [
-        ("gen_subtitle", "生成字幕", "gen_subtitle"),
-        ("add_subtitle", "生成字幕视频", "add_subtitle"),
-        #("translate_text", "文本翻译", "translate_text"),
-        #("generate_subtitle", "生成字幕", "generate_subtitle"),
-        #("split_audio", "分割音频", "split_audio"),
-        #("generate_tts", "TTS生成", "generate_tts"),
-        #("replace_audio", "音频替换", "replace_audio")
-    ]
+    missing_tasks = []
     
     print(f"🔍 检查任务 {task_id} 的完成状态:")
     print("=" * 60)
@@ -99,6 +103,7 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
         segments_data = None
         translated_segments = None
         subtitle_path = None
+        translated_subtitle_path = None
         audio_segments = None
         tts_segments = None
         
@@ -117,7 +122,13 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
                 video_path = video_files[0]["object_name"]
                 print(f"✅ 使用已下载的视频: {os.path.basename(video_path)}")
         
-        # 2. 提取音频 (如果需要)
+        # 2. 提取视频格式 (如果需要)
+        if any(task[0] == "extract_video_format" for task in missing_tasks):
+            print("🎬 提取视频格式...")
+            video_width, video_height = await extract_video_format(video_path, task_id)
+            print(f"✅ 视频格式提取完成: {video_width}x{video_height}")
+        
+        # 3. 提取音频 (如果需要)
         if any(task[0] == "extract_audio" for task in missing_tasks):
             print("🎵 提取音频...")
             audio_path = await extract_audio(video_path, task_id)
@@ -146,14 +157,27 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
                     segments_data = speech_result["segments"]
                 print(f"✅ 使用已识别的结果: {len(segments_data)} 个片段")
 
+        
+        # 7. 分割音频 (如果需要)
+        if any(task[0] == "split_audio" for task in missing_tasks):
+            print("✂️  分割音频...")
+            audio_segments = await split_audio_by_subtitle(audio_path, segments_data, task_id)
+            print(f"✅ 音频分割完成，生成了 {len(audio_segments)} 个片段")
+        else:
+            # 使用已分割的音频
+            split_files = storage.list_files(task_id, "split_audio")
+            if split_files:
+                audio_segments = [file_info["object_name"] for file_info in split_files]
+                print(f"✅ 使用已分割的音频: {len(audio_segments)} 个片段")
+        
+
         # 3.1. 生成字幕 (如果需要)
         if any(task[0] == "gen_subtitle" for task in missing_tasks):
             print("📝 生成字幕...")
-            subtitle_info = await gen_subtitle(segments_data, task_id)
-            if subtitle_info:
+            subtitle_path = await gen_subtitle(segments_data, task_id)
+            if subtitle_path:
                 print("✅ 字幕生成完成:")
-                print(f"   - 横屏字幕: {os.path.basename(subtitle_info['landscape'])}")
-                print(f"   - 竖屏字幕: {os.path.basename(subtitle_info['portrait'])}")
+                print(f"   - 字幕: {os.path.basename(subtitle_path)}")
             else:
                 print("❌ 字幕生成失败")
                 return
@@ -162,30 +186,22 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
             subtitle_files = storage.list_files(task_id, "gen_subtitle")
             if subtitle_files:
                 # 构建字幕信息字典
-                landscape_file = None
-                portrait_file = None
+                subtitle_file = None
                 for file_info in subtitle_files:
-                    if "landscape" in file_info["object_name"]:
-                        landscape_file = file_info["object_name"]
-                    elif "portrait" in file_info["object_name"]:
-                        portrait_file = file_info["object_name"]
+                    subtitle_file = file_info["object_name"]
                 
-                if landscape_file and portrait_file:
-                    subtitle_info = {
-                        "landscape": landscape_file,
-                        "portrait": portrait_file
-                    }
+                if subtitle_file:
+                    subtitle_path = subtitle_file
                     print("✅ 使用已生成的字幕:")
-                    print(f"   - 横屏字幕: {os.path.basename(landscape_file)}")
-                    print(f"   - 竖屏字幕: {os.path.basename(portrait_file)}")
+                    print(f"   - 字幕: {os.path.basename(subtitle_path)}")
                 else:
                     print("❌ 未找到完整的字幕文件")
                     return
 
-        # 3.5. 生成字幕视频 (如果需要)
+        # 3.5. 生成字幕视频
         if any(task[0] == "add_subtitle" for task in missing_tasks):
             print("🎬 生成带字幕的中间视频...")
-            subtitled_video_path = await add_subtitle_to_video(subtitle_info, task_id)
+            subtitled_video_path = await add_subtitle_to_video(subtitle_path, task_id)
             if subtitled_video_path:
                 print(f"✅ 字幕视频生成完成: {os.path.basename(subtitled_video_path)}")
             else:
@@ -202,7 +218,7 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
         # 5. 翻译文本 (如果需要)
         if any(task[0] == "translate_text" for task in missing_tasks):
             print(f"🌍 翻译文本 (目标语言: {target_language})...")
-            translated_segments = await translate_text(subtitle_info, target_language, task_id)
+            translated_segments = await translate_text(segments_data, target_language, task_id)
             print("✅ 文本翻译完成")
         else:
             # 使用已翻译的结果
@@ -215,29 +231,49 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
                 print("✅ 使用已翻译的结果")
         
         # 6. 生成字幕 (如果需要)
-        if any(task[0] == "generate_subtitle" for task in missing_tasks):
-            print("📝 生成字幕...")
-            subtitle_path = await gen_subtitle(translated_segments, task_id)
-            print(f"✅ 字幕生成完成: {os.path.basename(subtitle_path)}")
+        if any(task[0] == "gen_translated_subtitle" for task in missing_tasks):
+            print("📝 生成翻译后的字幕...")
+            translated_subtitle_path = await gen_translated_subtitle(translated_segments, task_id, video_width)
+            if subtitle_path:
+                print("✅ 翻译后的字幕生成完成:")
+                print(f"   - 字幕: {os.path.basename(translated_subtitle_path)}")
+            else:
+                print("❌ 翻译后的字幕生成失败")
+                return
         else:
             # 使用已生成的字幕
-            subtitle_files = storage.list_files(task_id, "generate_subtitle")
+            subtitle_files = storage.list_files(task_id, "gen_translated_subtitle")
             if subtitle_files:
-                subtitle_path = subtitle_files[0]["object_name"]
-                print(f"✅ 使用已生成的字幕: {os.path.basename(subtitle_path)}")
-        
-        # 7. 分割音频 (如果需要)
-        if any(task[0] == "split_audio" for task in missing_tasks):
-            print("✂️  分割音频...")
-            audio_segments = await split_audio_by_subtitle(audio_path, subtitle_path, task_id)
-            print(f"✅ 音频分割完成，生成了 {len(audio_segments)} 个片段")
+                # 构建字幕信息字典
+                translated_subtitle_path = None
+                for file_info in subtitle_files:
+                    translated_subtitle_path = file_info["object_name"]
+                
+                if translated_subtitle_path:
+                    translated_subtitle_path = subtitle_path
+                    print("✅ 使用已生成的字幕:")
+                    print(f"   - 字幕: {os.path.basename(translated_subtitle_path)}")
+                else:
+                    print("❌ 未找到完整的字幕文件")
+                    return
+
+        # 3.5. 生成字幕视频 (如果需要)
+        if any(task[0] == "add_translated_subtitle" for task in missing_tasks):
+            print("🎬 生成带翻译字幕的中间视频...")
+            translated_subtitled_video_path = await add_translated_subtitle_to_video(translated_subtitle_path, task_id)
+            if translated_subtitled_video_path:
+                print(f"✅ 翻译字幕视频生成完成: {os.path.basename(translated_subtitled_video_path)}")
+            else:
+                print("⚠️  翻译字幕视频生成失败，继续后续流程")
         else:
-            # 使用已分割的音频
-            split_files = storage.list_files(task_id, "split_audio")
-            if split_files:
-                audio_segments = [file_info["object_name"] for file_info in split_files]
-                print(f"✅ 使用已分割的音频: {len(audio_segments)} 个片段")
+            # 检查是否已有字幕视频
+            translated_subtitle_video_files = storage.list_files(task_id, "add_translated_subtitle")
+            if subtitle_video_files:
+                print(f"✅ 使用已生成的翻译字幕视频: {os.path.basename(translated_subtitle_video_files[0]['object_name'])}")
+            else:
+                print("ℹ️  未找到翻译字幕视频文件")
         
+
         # 8. TTS生成 (如果需要)
         if any(task[0] == "generate_tts" for task in missing_tasks):
             print("🔊 TTS语音合成...")
@@ -250,10 +286,12 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
                 tts_segments = [file_info["object_name"] for file_info in tts_files]
                 print(f"✅ 使用已生成的TTS: {len(tts_segments)} 个片段")
         
+
+
         # 9. 替换音频 (如果需要)
         if any(task[0] == "replace_audio" for task in missing_tasks):
             print("🔄 替换音频...")
-            final_video = await replace_audio_tracks(video_path, audio_segments, tts_segments, task_id)
+            final_video = await replace_audio_tracks(video_path, audio_path, segments_data, tts_segments, task_id)
             print(f"✅ 音频替换完成: {os.path.basename(final_video)}")
         else:
             # 使用已替换的音频

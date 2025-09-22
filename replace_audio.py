@@ -9,22 +9,22 @@ import subprocess
 import re
 from typing import List, Dict, Any
 from minio_storage import get_storage
+import shutil
 
 
-async def replace_audio_tracks(video_path: str, _original_audio_segments: List[str], tts_audio_segments: List[str], task_id: str, background_volume: float = 0.15) -> str:
+async def replace_audio_tracks(video_path: str, audio_path: str, segments_data: List[Dict[str, Any]], tts_audio_segments: List[str], task_id: str, background_volume: float = 0.15) -> str:
     """根据TTS音频替换视频中的音频轨道
     
     Args:
         video_path: 视频文件路径
-        _original_audio_segments: 原始音频片段（保留用于API兼容性）
+        audio_path: 音频文件路径
+        segments_data: 文本片段数据
         tts_audio_segments: TTS音频片段列表
         task_id: 任务ID
         background_volume: 背景音频音量比例（保留用于API兼容性）
     """
-    print(f"开始音频替换任务，TTS音频片段数量: {len(tts_audio_segments)}")
-    
-    # 注意: _original_audio_segments 和 background_volume 参数保留用于API兼容性
-    
+    print(f"开始音频替换任务，文本片段数量: {len(segments_data)}，TTS音频片段数量: {len(tts_audio_segments)}")
+        
     # 获取存储实例
     storage = get_storage()
     
@@ -36,8 +36,15 @@ async def replace_audio_tracks(video_path: str, _original_audio_segments: List[s
     )
     if not temp_video_path or not os.path.exists(temp_video_path):
         raise ValueError("无法找到视频文件")
-    
 
+    # 从 MinIO 下载音频文件到临时位置
+    temp_audio_path = storage.download_file(
+        task_id=task_id,
+        step="extract_audio",
+        object_name=os.path.basename(audio_path)
+    )
+    if not temp_audio_path or not os.path.exists(temp_audio_path):
+        raise ValueError("无法找到音频文件")
     
     # 下载所有TTS音频片段到临时目录
     temp_tts_files = []
@@ -55,6 +62,9 @@ async def replace_audio_tracks(video_path: str, _original_audio_segments: List[s
     try:
         # 创建混合音频文件
         mixed_audio_path = await create_mixed_audio(
+            task_id,
+            temp_audio_path,
+            segments_data,
             temp_tts_files, 
             background_volume
         )
@@ -80,14 +90,12 @@ async def replace_audio_tracks(video_path: str, _original_audio_segments: List[s
         cleanup_temp_files(temp_files_to_clean)
 
 
-
-
-
-
-async def create_mixed_audio(tts_files: List[str], background_volume: float = 0.15) -> str:
-    """创建混合音频文件，直接拼接TTS音频文件
+async def create_mixed_audio(task_id: str, audio_path: str, segments_data: List[Dict[str, Any]], tts_files: List[str], background_volume: float = 0.15) -> str:
+    """创建混合音频文件
     
     Args:
+        audio_path: 音频文件路径
+        segments_data: 文本片段数据
         tts_files: TTS音频文件列表
         background_volume: 背景音频音量比例（保留用于API兼容性）
     """
@@ -101,7 +109,7 @@ async def create_mixed_audio(tts_files: List[str], background_volume: float = 0.
     
     # 使用新的音频拼接方法：直接拼接TTS音频
     try:
-        await create_audio_by_subtitle_timing(tts_files, mixed_audio_path)
+        await create_audio_by_subtitle_timing(task_id, audio_path, segments_data, tts_files, mixed_audio_path)
         print(f"音频拼接完成 {mixed_audio_path}")
         return mixed_audio_path
         
@@ -110,125 +118,294 @@ async def create_mixed_audio(tts_files: List[str], background_volume: float = 0.
         raise RuntimeError(f"音频拼接失败: {e}") from e
 
 
-async def create_audio_by_subtitle_timing(tts_files: List[str], output_path: str):
-    """直接拼接TTS音频文件，不使用静音填充
+async def create_audio_by_subtitle_timing(task_id: str, audio_path: str, segments_data: List[Dict[str, Any]], tts_files: List[str], output_path: str):
+    """根据字幕时间戳将TTS音频替换到原始音频中，支持时长误差处理
     
     Args:
+        audio_path: 原始音频文件路径
+        segments_data: 文本片段数据，包含start和end时间戳
         tts_files: TTS音频文件列表
         output_path: 输出音频文件路径
     """
-    print("开始直接拼接TTS音频文件")
+    print("开始根据字幕时间戳替换音频，支持时长误差处理")
     
-    # 检测第一个TTS音频文件的格式，作为标准格式
     if not tts_files:
         raise ValueError("没有TTS音频文件")
     
-    reference_format = await probe_audio_format(tts_files[0])
-    print(f"使用参考音频格式: 采样率={reference_format['sample_rate']}Hz, 声道数={reference_format['channels']}, 编码={reference_format['codec']}")
+    if len(segments_data) != len(tts_files):
+        print(f"警告：字幕片段数量({len(segments_data)})与TTS文件数量({len(tts_files)})不匹配")
     
-    # 创建音频拼接脚本
-    concat_list_path = f"/tmp/concat_list_{uuid.uuid4().hex}.txt"
+    # 检测原始音频格式
+    original_format = await probe_audio_format(audio_path)
+    print(f"原始音频格式: 采样率={original_format['sample_rate']}Hz, 声道数={original_format['channels']}, 编码={original_format['codec']}")
+    
+    # 获取原始音频总时长
+    original_duration = await probe_audio_duration(audio_path)
+    print(f"原始音频时长: {original_duration:.2f}秒")
+    
+    # 创建临时文件列表
     temp_files = []
     
-    try:
-        # 生成拼接列表，直接拼接TTS音频
-        await generate_audio_concat_list(tts_files, concat_list_path, temp_files, reference_format)
-        
-        # 验证拼接列表
-        await validate_audio_concat_list(concat_list_path, temp_files)
-        
-        # 打印拼接列表内容用于调试
-        print("拼接列表内容:")
-        with open(concat_list_path, 'r', encoding='utf-8') as f:
-            for i, line in enumerate(f.readlines()[:10]):  # 只显示前10行
-                print(f"  {i+1}: {line.strip()}")
-        if len(tts_files) > 10:
-            print(f"  ... (还有 {len(tts_files) - 10} 个文件)")
+    storage = get_storage()
 
-        # 使用ffmpeg拼接音频，使用检测到的格式参数
+    try:
+        # 使用新的时长同步方法处理音频替换
+        await create_synchronized_audio_segments(
+            task_id, audio_path, segments_data, tts_files, temp_files, 
+            original_format, original_duration, storage, output_path
+        )
+        
+        print(f"音频替换完成: {output_path}")
+        return output_path
+        
+    finally:
+        # 清理临时文件
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                try:
+                    os.unlink(temp_file)
+                except OSError as e:
+                    print(f"清理临时文件失败 {temp_file}: {e}")
+
+async def convert_audio_format(input_file: str, target_format: Dict[str, Any]) -> str:
+    """将音频转换为目标格式
+    
+    Args:
+        input_file: 输入音频文件路径
+        target_format: 目标格式字典，包含sample_rate、channels、codec
+        
+    Returns:
+        转换后的音频文件路径
+    """
+    output_file = f"/tmp/converted_{uuid.uuid4().hex}.wav"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_file,
+        "-ar", str(target_format['sample_rate']),
+        "-ac", str(target_format['channels']),
+        "-c:a", target_format['codec'],
+        output_file
+    ]
+    
+    print(f"转换音频格式: {' '.join(cmd)}")
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return output_file
+
+
+async def add_silence_to_tts(tts_file: str, silence_duration: float, master_format: Dict[str, Any]) -> str:
+    """为TTS音频添加静音
+    
+    Args:
+        tts_file: TTS音频文件路径
+        silence_duration: 静音时长（秒）
+        master_format: 主音频格式
+        
+    Returns:
+        添加静音后的音频文件路径
+    """
+    output_file = f"/tmp/tts_with_silence_{uuid.uuid4().hex}.wav"
+    silence_file = f"/tmp/silence_{uuid.uuid4().hex}.wav"
+    
+    try:
+        # 生成静音
+        silence_cmd = [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", f"anullsrc=duration={silence_duration}",
+            "-ar", str(master_format['sample_rate']),
+            "-ac", str(master_format['channels']),
+            "-c:a", master_format['codec'],
+            silence_file
+        ]
+        print(f"生成静音: {' '.join(silence_cmd)}")
+        subprocess.run(silence_cmd, capture_output=True, text=True, check=True)
+        
+        # 拼接TTS和静音
+        concat_cmd = [
+            "ffmpeg", "-y",
+            "-i", tts_file,
+            "-i", silence_file,
+            "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[out]",
+            "-map", "[out]",
+            "-ar", str(master_format['sample_rate']),
+            "-ac", str(master_format['channels']),
+            "-c:a", master_format['codec'],
+            output_file
+        ]
+        print(f"拼接TTS和静音: {' '.join(concat_cmd)}")
+        subprocess.run(concat_cmd, capture_output=True, text=True, check=True)
+        
+        return output_file
+        
+    finally:
+        # 清理静音文件
+        if os.path.exists(silence_file):
+            try:
+                os.unlink(silence_file)
+            except OSError:
+                pass
+
+
+async def truncate_tts_audio(tts_file: str, target_duration: float, master_format: Dict[str, Any]) -> str:
+    """截断TTS音频到指定时长
+    
+    Args:
+        tts_file: TTS音频文件路径
+        target_duration: 目标时长（秒）
+        master_format: 主音频格式
+        
+    Returns:
+        截断后的音频文件路径
+    """
+    output_file = f"/tmp/truncated_tts_{uuid.uuid4().hex}.wav"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", tts_file,
+        "-t", str(target_duration),  # 截断到指定时长
+        "-ar", str(master_format['sample_rate']),
+        "-ac", str(master_format['channels']),
+        "-c:a", master_format['codec'],
+        output_file
+    ]
+    
+    print(f"截断TTS音频: {' '.join(cmd)}")
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return output_file
+
+
+async def create_synchronized_audio_segments(
+    task_id: str, audio_path: str, segments_data: List[Dict[str, Any]], 
+    tts_files: List[str], temp_files: List[str],
+    master_format: Dict[str, Any], original_duration: float, storage, output_path
+):
+    """创建时长同步的音频片段
+    
+    Args:
+        task_id: 任务ID
+        audio_path: 原始音频文件路径
+        segments_data: 文本片段数据
+        tts_files: TTS音频文件列表
+        temp_files: 临时文件列表（用于存储处理后的片段）
+        master_format: 主音频格式
+        original_duration: 原始音频总时长
+        storage: 存储实例
+    """
+    print("开始创建时长同步的音频片段")
+    
+    accumulated_error = 0.0  # 累积误差
+    converted_tts_files = []  # 存储转换后的TTS文件
+    
+    try:
+        # 第一步：转换所有TTS音频到标准格式
+        print("转换TTS音频格式...")
+        for i, tts_file in enumerate(tts_files):
+            converted_file = await convert_audio_format(tts_file, master_format)
+            converted_tts_files.append(converted_file)
+            print(f"TTS文件 {i} 格式转换完成")
+        
+        # 第二步：处理每个片段的时长同步
+        for i, (segment, converted_tts_file) in enumerate(zip(segments_data, converted_tts_files)):
+            start_time = segment.get('start', 0)
+            end_time = segment.get('end', start_time + 1)
+            expected_duration = end_time - start_time
+            
+            # 检测转换后TTS的实际时长
+            tts_duration = await probe_audio_duration(converted_tts_file)
+            
+            # 计算误差
+            error = tts_duration - expected_duration
+            accumulated_error += error
+            
+            print(f"片段 {i}: 预期时长={expected_duration:.2f}s, TTS时长={tts_duration:.2f}s, 误差={error:.2f}s, 累积误差={accumulated_error:.2f}s")
+            
+            # 处理时长差异
+            final_audio = converted_tts_file
+            
+            if accumulated_error < -0.1:  # 需要静音填充（误差超过0.1秒）
+                silence_duration = abs(accumulated_error)
+                print(f"添加静音填充: {silence_duration:.2f}s")
+                final_audio = await add_silence_to_tts(converted_tts_file, silence_duration, master_format)
+                accumulated_error = 0.0  # 重置误差
+            elif accumulated_error > 0:  # 误差较小，保留用于后续补偿
+                print(f"保留误差用于后续补偿: {accumulated_error:.2f}s")
+            
+
+            # 使用FFmpeg进行音频替换，确保格式一致
+            await replace_audio_segment_with_format_consistency(
+                audio_path, final_audio, start_time, end_time, 
+                output_path, master_format, original_duration
+            )
+            shutil.copyfile(output_path, audio_path)
+            
+            # 上传到MinIO
+            object_name = f"segment_{i}_{uuid.uuid4().hex}.wav"
+            storage.upload_file(
+                task_id=task_id,
+                step="replace_audio",
+                local_file_path=output_path,
+                object_name=object_name
+            )
+            print(f"片段 {i} 处理完成并上传")
+    finally:
+        # 清理转换后的TTS文件
+        for converted_file in converted_tts_files:
+            if os.path.exists(converted_file):
+                try:
+                    os.unlink(converted_file)
+                except OSError as e:
+                    print(f"清理转换文件失败 {converted_file}: {e}")
+
+
+async def replace_audio_segment_with_format_consistency(
+    audio_path: str, tts_file: str, start_time: float, end_time: float,
+    output_path: str, master_format: Dict[str, Any], original_duration: float
+):
+    """使用格式一致性进行音频片段替换
+    
+    Args:
+        audio_path: 原始音频文件路径
+        tts_file: TTS音频文件路径
+        start_time: 开始时间
+        end_time: 结束时间
+        output_path: 输出文件路径
+        master_format: 主音频格式
+        original_duration: 原始音频总时长
+    """
+    try:
+        # 构建FFmpeg命令进行音频替换，确保格式一致
         cmd = [
-            "ffmpeg",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", concat_list_path,
-            "-c:a", reference_format["codec"],  # 使用检测到的编码格式
-            "-ar", str(reference_format["sample_rate"]),  # 使用检测到的采样率
-            "-ac", str(reference_format["channels"]),     # 使用检测到的声道数
-            "-y",
+            "ffmpeg", "-y",
+            "-i", audio_path,  # 原始音频
+            "-i", tts_file,    # TTS音频
+            "-filter_complex", 
+            f"[0:a]atrim=0:{start_time}[before];"
+            f"[0:a]atrim={end_time}:{original_duration}[after];"
+            f"[before][1:a][after]concat=n=3:v=0:a=1[out]",
+            "-map", "[out]",
+            "-c:a", master_format['codec'],
+            "-ar", str(master_format['sample_rate']),
+            "-ac", str(master_format['channels']),
             output_path
         ]
         
-        print("开始拼接音频...")
-        print(f"FFmpeg命令: {' '.join(cmd)}")
+        print(f"执行格式一致的音频替换: {' '.join(cmd)}")
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        print(f"音频片段替换完成: {output_path}")
         
-        try:
-            result = subprocess.run(cmd, capture_output=True, check=True, text=True)
-            print("FFmpeg拼接成功")
-            if result.stderr:
-                print(f"FFmpeg输出: {result.stderr}")
-        except subprocess.CalledProcessError as e:
-            print(f"FFmpeg拼接失败: {e}")
-            print(f"错误输出: {e.stderr}")
-            raise
-        
-        # 验证输出音频时长
-        audio_duration = await probe_audio_duration(output_path)
-        print(f"音频拼接完成，总时长: {audio_duration:.3f}秒")
-        
-    except Exception as e:
-        print(f"音频拼接失败: {e}")
-        raise
-    finally:
-        # 清理临时文件
-        cleanup_temp_files([concat_list_path] + temp_files)
-
-
-async def generate_audio_concat_list(tts_files: List[str], concat_list_path: str, temp_files: List[str], audio_format: Dict[str, Any]):
-    """生成音频拼接列表，直接按顺序拼接TTS音频文件
-    
-    Args:
-        tts_files: TTS音频文件列表
-        concat_list_path: 拼接列表文件路径
-        temp_files: 临时文件列表（用于清理）
-        audio_format: 音频格式参数（采样率、声道数、编码格式）
-    """
-    print("生成音频拼接列表（直接拼接TTS音频）...")
-    
-    # 抑制未使用参数警告
-    _ = audio_format
-    _ = temp_files
-    
-    with open(concat_list_path, 'w', encoding='utf-8') as f:
-        for i, tts_file in enumerate(tts_files):
-            print(f"添加TTS音频文件 {i+1}/{len(tts_files)}: {os.path.basename(tts_file)}")
-            f.write(f"file '{tts_file}'\n")
-
-    print(f"拼接列表已生成: {concat_list_path}")
-    print(f"TTS音频文件数量: {len(tts_files)}")
-
-
-
-
-async def validate_audio_concat_list(concat_list_path: str, temp_files: List[str]):  # noqa: ARG001
-    """验证音频拼接列表"""
-    _ = temp_files  # 抑制未使用参数警告
-    print("验证音频拼接列表...")
-    with open(concat_list_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    print(f"拼接列表已验证: {concat_list_path}")
-
-    total_duration = 0.0
-    # 验证所有TTS音频文件
-    for line in lines:
-        file_path = line.strip().replace("file '", "").replace("'", "")
-        if os.path.exists(file_path):
-            duration = await probe_audio_duration(file_path)
-            total_duration += duration
-            print(f"TTS音频文件时长: {duration:.3f}s - {os.path.basename(file_path)}")
-        else:
-            print(f"警告: TTS音频文件不存在: {file_path}")
-    
-    print(f"拼接列表总时长: {total_duration:.3f}s")
+    except subprocess.CalledProcessError as e:
+        print(f"音频片段替换失败: {e.stderr}")
+        # 如果替换失败，使用原始音频
+        cmd_fallback = [
+            "ffmpeg", "-y",
+            "-i", audio_path,
+            "-c:a", master_format['codec'],
+            "-ar", str(master_format['sample_rate']),
+            "-ac", str(master_format['channels']),
+            output_path
+        ]
+        subprocess.run(cmd_fallback, capture_output=True, text=True, check=True)
+        print(f"使用原始音频作为备选: {output_path}")
 
 
 async def probe_audio_duration(audio_path: str) -> float:

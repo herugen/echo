@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from prefect import flow, task
 import uuid
+from typing import List, Dict, Any
 
 # 导入任务模块
 from download_video import download_video
@@ -19,11 +20,13 @@ from speech_to_text import speech_to_text
 from add_subtitle import add_subtitle_to_video
 from translate_text import translate_text
 from gen_subtitle import gen_subtitle
+from gen_translated_subtitle import gen_translated_subtitle
 from split_audio import split_audio_by_subtitle
 from generate_tts import generate_tts_audio
 from replace_audio import replace_audio_tracks
 from minio_storage import get_storage
-
+from add_translated_subtitle import add_translated_subtitle_to_video
+from extract_video_format import extract_video_format
 # 加载环境变量
 load_dotenv()
 
@@ -68,6 +71,11 @@ async def download_video_task(url: str, task_id: str) -> str:
     return await download_video(url, task_id)
 
 @task
+async def extract_video_format_task(video_path: str, task_id: str) -> tuple[int, int]:
+    """使用 FFmpeg 提取视频格式"""
+    return await extract_video_format(video_path, task_id)
+
+@task
 async def extract_audio_task(video_path: str, task_id: str) -> str:
     """使用 FFmpeg 提取音频"""
     return await extract_audio(video_path, task_id)
@@ -89,6 +97,11 @@ async def add_subtitle_to_video_task(subtitle_path: str, task_id: str):
     return await add_subtitle_to_video(subtitle_path, task_id)
 
 @task
+async def add_translated_subtitle_to_video_task(translated_subtitle_path: str, task_id: str):
+    """给视频加上翻译后的字幕"""
+    return await add_translated_subtitle_to_video(translated_subtitle_path, task_id)
+
+@task
 async def translate_text_task(segments_data, target_language: str, task_id: str):
     """使用 DeepSeek 翻译文本片段"""
     return await translate_text(segments_data, target_language, task_id)
@@ -102,9 +115,14 @@ async def generate_subtitle_task(segments_data, task_id: str):
     return await gen_subtitle(segments_data, task_id)
 
 @task
-async def split_audio_task(audio_path: str, subtitle_path: str, task_id: str):
+async def generate_translated_subtitle_task(segments_data, task_id: str, video_width: int):
+    """生成翻译后的字幕文件"""
+    return await gen_translated_subtitle(segments_data, task_id, video_width)
+
+@task
+async def split_audio_task(audio_path: str, segments_data: List[Dict[str, Any]], task_id: str):
     """根据字幕时间分割音频"""
-    return await split_audio_by_subtitle(audio_path, subtitle_path, task_id)
+    return await split_audio_by_subtitle(audio_path, segments_data, task_id)
 
 @task
 async def generate_tts_task(text_segments, target_language: str, task_id: str):
@@ -112,9 +130,9 @@ async def generate_tts_task(text_segments, target_language: str, task_id: str):
     return await generate_tts_audio(text_segments, target_language, task_id)
 
 @task
-async def replace_audio_task(video_path: str, original_audio_segments, tts_audio_segments, task_id: str):
+async def replace_audio_task(video_path: str, audio_path: str, segments_data, tts_audio_segments, task_id: str):
     """替换视频中的音频轨道"""
-    return await replace_audio_tracks(video_path, original_audio_segments, tts_audio_segments, task_id)
+    return await replace_audio_tracks(video_path, audio_path, segments_data, tts_audio_segments, task_id)
 
 # =============================================================================
 # 主工作流
@@ -131,32 +149,43 @@ async def video_translation_workflow(
     # 1. 下载视频
     video_path = await download_video_task(url, task_id)
     
-    # 2. 提取音频
+    # 2. 提取视频格式
+    video_width, video_height = await extract_video_format_task(video_path, task_id)
+
+    # 3. 提取音频
     audio_path = await extract_audio_task(video_path, task_id)
     
-    # 3. 语音识别
+    # 4. 语音识别
     speech_result = await speech_to_text_task(audio_path, task_id)
     segments_data = speech_result["segments"]
     
-    # 4. 生成字幕
+    # 5. 分割音频
+    audio_segments = await split_audio_task(audio_path, segments_data, task_id)
+
+    # 6. 生成字幕
     subtitle_path = await generate_subtitle_task(segments_data, task_id)
     
-    # 5. 生成带字幕的中间视频文件
+    # 7. 生成带字幕的中间视频文件
     subtitled_video_path = await add_subtitle_to_video_task(subtitle_path, task_id)
     if subtitled_video_path:
         print(f"带字幕的中间视频已生成: {subtitled_video_path}")
 
-    # 7. 翻译文本
-    translated_segments = await translate_text_task(corrected_segments, target_language, task_id)
+    # 8. 翻译文本
+    translated_segments = await translate_text_task(segments_data, target_language, task_id)
     
-    # 8. 分割音频
-    audio_segments = await split_audio_task(audio_path, subtitle_path, task_id)
+    # 9. 生成翻译后的字幕
+    translated_subtitle_path = await generate_translated_subtitle_task(translated_segments, task_id, video_width)
     
-    # 9. TTS 生成
+    # 10. 生成翻译后的字幕视频
+    translated_subtitled_video_path = await add_translated_subtitle_to_video_task(translated_subtitle_path, task_id)
+    if translated_subtitled_video_path:
+        print(f"带翻译字幕的中间视频已生成: {translated_subtitled_video_path}")
+
+    # 11. TTS 生成
     tts_segments = await generate_tts_task(translated_segments, target_language, task_id)
     
-    # 10. 替换音频
-    final_video = await replace_audio_task(video_path, audio_segments, tts_segments, task_id)
+    # 12. 替换音频
+    final_video = await replace_audio_task(video_path, audio_path, segments_data, tts_segments, task_id)
     
     print(f"视频翻译工作流完成，任务ID: {task_id}")
     return final_video

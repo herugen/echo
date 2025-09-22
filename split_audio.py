@@ -11,7 +11,7 @@ from typing import List, Dict, Any
 from minio_storage import get_storage
 
 
-async def split_audio_by_subtitle(audio_path: str, subtitle_path: str, task_id: str) -> List[str]:
+async def split_audio_by_subtitle(audio_path: str, segments_data: List[Dict[str, Any]], task_id: str) -> List[str]:
     """根据字幕时间分割音频并存储到 MinIO"""
 
     print(f"分割音频: {audio_path}")
@@ -24,28 +24,17 @@ async def split_audio_by_subtitle(audio_path: str, subtitle_path: str, task_id: 
         object_name=os.path.basename(audio_path)
     )
     
-    # 从 MinIO 下载字幕文件到临时位置
-    temp_subtitle_path = storage.download_file(
-        task_id=task_id,
-        step="generate_subtitle",
-        object_name=os.path.basename(subtitle_path)
-    )
-    
-    # 解析 SRT 字幕文件，提取时间信息
-    subtitle_segments = parse_srt_file(temp_subtitle_path)
-    print(f"解析到 {len(subtitle_segments)} 个字幕片段")
-    
     # 根据时间信息分割音频
     audio_segments = []
-    for i, segment in enumerate(subtitle_segments):
+    for i, segment in enumerate(segments_data):
         segment_filename = f"audio_segment_{i+1:05d}_{uuid.uuid4().hex[:8]}.wav"
         temp_segment_path = f"/tmp/{segment_filename}"
         
         # 使用 FFmpeg 根据时间戳分割音频
-        start_time = segment["start_time"]
-        duration = segment["end_time"] - segment["start_time"]
+        start_time = segment["start"]
+        duration = segment["end"] - segment["start"]
         
-        print(f"分割音频片段 {i+1}: {start_time:.3f}s -> {segment['end_time']:.3f}s (时长: {duration:.3f}s)")
+        print(f"分割音频片段 {i+1}: {start_time:.3f}s -> {segment['end']:.3f}s (时长: {duration:.3f}s)")
         
         cmd = [
             "ffmpeg",
@@ -85,50 +74,6 @@ async def split_audio_by_subtitle(audio_path: str, subtitle_path: str, task_id: 
     
     # 清理临时文件
     os.unlink(temp_audio_path)
-    os.unlink(temp_subtitle_path)
     
     print(f"音频分割完成，生成了 {len(audio_segments)} 个片段")
     return audio_segments
-
-
-def parse_srt_file(srt_path: str) -> List[Dict[str, Any]]:
-    """解析 SRT 字幕文件，提取时间信息和文本"""
-    segments = []
-    
-    with open(srt_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    # 使用正则表达式匹配 SRT 格式
-    # 匹配模式: 序号\n时间戳\n文本\n\n
-    pattern = r'(\d+)\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\n(.*?)(?=\n\d+\n|\n*$)'
-    matches = re.findall(pattern, content, re.DOTALL)
-    
-    for match in matches:
-        index, start_time_str, end_time_str, text = match
-        
-        # 转换时间格式 HH:MM:SS,mmm 为秒数
-        start_time = srt_time_to_seconds(start_time_str)
-        end_time = srt_time_to_seconds(end_time_str)
-        
-        # 清理文本（去除多余的空白字符）
-        text = text.strip().replace('\n', ' ')
-        
-        segments.append({
-            "index": int(index),
-            "start_time": start_time,
-            "end_time": end_time,
-            "text": text
-        })
-    
-    return segments
-
-
-def srt_time_to_seconds(time_str: str) -> float:
-    """将 SRT 时间格式 (HH:MM:SS,mmm) 转换为秒数"""
-    # 解析时间格式: HH:MM:SS,mmm
-    time_part, millisec_part = time_str.split(',')
-    hours, minutes, seconds = map(int, time_part.split(':'))
-    milliseconds = int(millisec_part)
-    
-    total_seconds = hours * 3600 + minutes * 60 + seconds + milliseconds / 1000.0
-    return total_seconds

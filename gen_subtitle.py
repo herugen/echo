@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 from minio_storage import get_storage
 
 
-async def gen_subtitle(segments_data: List[Dict[str, Any]], task_id: str) -> :
+async def gen_subtitle(segments_data: List[Dict[str, Any]], task_id: str) -> str:
     """
     使用修正后的segments生成字幕文件，并保存到MinIO
     
@@ -31,77 +31,46 @@ async def gen_subtitle(segments_data: List[Dict[str, Any]], task_id: str) -> :
         # 获取存储实例
         storage = get_storage()
         
-        # 从MinIO下载原始视频文件
-        # 原始视频文件存储在download步骤中
-        video_files = storage.list_files(task_id, "download")
-        if not video_files:
-            print("未找到原始视频文件")
-            return None
-        
-        # 生成横屏和竖屏两套字幕文件
+        # 生成横屏字幕文件
         print("生成横屏字幕文件...")
-        landscape_content = generate_ass_from_segments(segments_data, 'landscape')
-        
-        print("生成竖屏字幕文件...")
-        portrait_content = generate_ass_from_segments(segments_data, 'portrait')
+        subtitle_content = generate_ass_from_segments(segments_data)
         
         # 创建横屏字幕文件
-        landscape_path = os.path.join(tempfile.gettempdir(), f"subtitle_landscape_{task_id}_{uuid.uuid4().hex}.ass")
-        with open(landscape_path, 'w', encoding='utf-8') as f:
-            f.write(landscape_content)
-        
-        # 创建竖屏字幕文件
-        portrait_path = os.path.join(tempfile.gettempdir(), f"subtitle_portrait_{task_id}_{uuid.uuid4().hex}.ass")
-        with open(portrait_path, 'w', encoding='utf-8') as f:
-            f.write(portrait_content)
+        subtitle_path = os.path.join(tempfile.gettempdir(), f"subtitle_{task_id}_{uuid.uuid4().hex}.ass")
+        with open(subtitle_path, 'w', encoding='utf-8') as f:
+            f.write(subtitle_content)
         
         # 上传横屏字幕到MinIO
-        landscape_object_name = f"subtitle_landscape_{uuid.uuid4().hex}.ass"
-        landscape_minio_path = storage.upload_file(
+        subtitle_object_name = f"subtitle_{uuid.uuid4().hex}.ass"
+        subtitle_minio_path = storage.upload_file(
             task_id=task_id,
             step="gen_subtitle",
-            local_file_path=landscape_path,
-            object_name=landscape_object_name
-        )
-        
-        # 上传竖屏字幕到MinIO
-        portrait_object_name = f"subtitle_portrait_{uuid.uuid4().hex}.ass"
-        portrait_minio_path = storage.upload_file(
-            task_id=task_id,
-            step="gen_subtitle",
-            local_file_path=portrait_path,
-            object_name=portrait_object_name
+            local_file_path=subtitle_path,
+            object_name=subtitle_object_name
         )
         
         # 清理临时文件
         try:
-            os.unlink(landscape_path)
-            os.unlink(portrait_path)
+            os.unlink(subtitle_path)
         except OSError as e:
             print(f"清理临时文件时出错: {e}")
         
-        print(f"横屏字幕文件已生成: {landscape_minio_path}")
-        print(f"竖屏字幕文件已生成: {portrait_minio_path}")
+        print(f"横屏字幕文件已生成: {subtitle_minio_path}")
         
         # 返回字幕文件信息
-        return {
-            "landscape": landscape_minio_path,
-            "portrait": portrait_minio_path
-        }
+        return subtitle_minio_path
         
     except (OSError, ValueError, RuntimeError) as e:
         print(f"生成字幕文件失败: {str(e)}")
         return None
 
 
-def generate_ass_from_segments(segments_data: List[Dict[str, Any]], orientation: str = 'landscape') -> str:
+def generate_ass_from_segments(segments_data: List[Dict[str, Any]]) -> str:
     """
     从segments数据生成ASS字幕内容，支持word级别高亮
     
     Args:
         segments_data: 文本片段数据，包含words字段
-        orientation: 视频方向 ('portrait' 或 'landscape')
-        
     Returns:
         str: ASS格式的字幕内容
     """
@@ -117,20 +86,16 @@ YCbCr Matrix: TV.601
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,2,2,2,30,30,40,1
 Style: Highlight,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,2,2,2,30,30,40,1
-Style: DefaultPortrait,Arial,8,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,2,2,2,25,25,35,1
-Style: HighlightPortrait,Arial,8,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,2,2,2,25,25,35,1
 Style: MultiLineDefault,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,1,1,2,2,30,30,40,1
 Style: MultiLineHighlight,Arial,12,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,1,1,2,2,30,30,40,1
-Style: MultiLinePortrait,Arial,8,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,1,1,2,2,25,25,35,1
-Style: MultiLineHighlightPortrait,Arial,8,&H00000000,&H000000FF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,1,1,2,2,25,25,35,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     
     # 根据视频方向选择样式
-    default_style = "DefaultPortrait" if orientation == 'portrait' else "Default"
-    highlight_style = "HighlightPortrait" if orientation == 'portrait' else "Highlight"
+    default_style = "Default"
+    highlight_style = "Highlight"
     
     # 收集所有word级别数据，按时间排序
     all_words = []
@@ -151,7 +116,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         all_words.sort(key=lambda x: x["start"])
         
         # 生成基于word的精确字幕
-        ass_content += generate_word_based_subtitles(all_words, highlight_style, orientation)
+        ass_content += generate_word_based_subtitles(all_words, highlight_style)
     else:
         # 没有word数据时，回退到segment级别
         for segment in segments_data:
@@ -166,14 +131,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return ass_content
 
 
-def generate_word_based_subtitles(all_words: List[Dict], highlight_style: str, orientation: str = 'landscape') -> str:
+def generate_word_based_subtitles(all_words: List[Dict], highlight_style: str) -> str:
     """
     基于句子分段生成稳定的字幕，避免闪烁问题
     
     Args:
         all_words: 所有word数据，已按时间排序
         highlight_style: 高亮样式名称
-        orientation: 视频方向 ('portrait' 或 'landscape')
         
     Returns:
         str: ASS格式的字幕内容
@@ -210,10 +174,7 @@ def generate_word_based_subtitles(all_words: List[Dict], highlight_style: str, o
         
         # 根据是否需要多行显示选择样式
         if is_multiline:
-            if orientation == 'portrait':
-                current_style = "MultiLineHighlightPortrait"
-            else:
-                current_style = "MultiLineHighlight"
+            current_style = "MultiLineHighlight"
         else:
             current_style = highlight_style
         
