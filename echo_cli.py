@@ -125,8 +125,14 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
         # 2. 提取视频格式 (如果需要)
         if any(task[0] == "extract_video_format" for task in missing_tasks):
             print("🎬 提取视频格式...")
-            video_width, video_height = await extract_video_format(video_path, task_id)
-            print(f"✅ 视频格式提取完成: {video_width}x{video_height}")
+            format_path = await extract_video_format(video_path, task_id)
+            print(f"✅ 视频格式提取完成: {os.path.basename(format_path)}")
+        else:
+            # 使用已提取的视频格式
+            format_files = storage.list_files(task_id, "extract_video_format")
+            if format_files:
+                format_path = format_files[0]["object_name"]
+                print(f"✅ 使用已提取的视频格式: {os.path.basename(format_path)}")
         
         # 3. 提取音频 (如果需要)
         if any(task[0] == "extract_audio" for task in missing_tasks):
@@ -233,8 +239,8 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
         # 6. 生成字幕 (如果需要)
         if any(task[0] == "gen_translated_subtitle" for task in missing_tasks):
             print("📝 生成翻译后的字幕...")
-            translated_subtitle_path = await gen_translated_subtitle(translated_segments, task_id, video_width)
-            if subtitle_path:
+            translated_subtitle_path = await gen_translated_subtitle(translated_segments, task_id, format_path)
+            if translated_subtitle_path:
                 print("✅ 翻译后的字幕生成完成:")
                 print(f"   - 字幕: {os.path.basename(translated_subtitle_path)}")
             else:

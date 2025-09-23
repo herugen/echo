@@ -24,7 +24,7 @@ async def add_translated_subtitle_to_video(subtitle_path: str, task_id: str) -> 
         str: 中间视频文件在MinIO中的路径
     """
     try:
-        print("开始生成带字幕的中间视频")
+        print("开始生成带翻译字幕的中间视频")
         
         # 获取存储实例
         storage = get_storage()

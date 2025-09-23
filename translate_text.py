@@ -21,22 +21,25 @@ async def translate_text(segments_data: List[Dict[str, Any]], target_language: s
         if not segments_data:
             print("没有文本片段需要翻译")
             return segments_data
-        
+
+        clean_segments_data = clean_segments(segments_data)
+
         # 获取 DeepSeek API 配置
         deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
         deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
         
         if not deepseek_api_key:
             print("警告: 未配置 DEEPSEEK_API_KEY，跳过文本翻译")
-            return segments_data
+            return clean_segments_data
         
+
         # 将片段按文本长度分组，避免单次请求过长
         max_chunk_size = 2000  # 每个块的最大字符数
         chunks = []
         current_chunk = []
         current_size = 0
         
-        for segment in segments_data:
+        for segment in clean_segments_data:
             segment_size = len(segment["text"])
             
             # 如果添加当前片段会超过限制，先处理当前块
@@ -61,7 +64,7 @@ async def translate_text(segments_data: List[Dict[str, Any]], target_language: s
             print(f"翻译第 {chunk_idx + 1}/{len(chunks)} 个块，包含 {len(chunk)} 个片段")
             
             # 构建上下文信息
-            context_text = build_translation_context_for_chunk(chunk, segments_data, target_language)
+            context_text = build_translation_context_for_chunk(chunk, clean_segments_data, target_language)
             
             # 调用 DeepSeek API 翻译文本
             translated_text = await call_deepseek_translation_api(
@@ -104,7 +107,7 @@ async def translate_text(segments_data: List[Dict[str, Any]], target_language: s
         error_msg = f"文本翻译失败: {str(e)}"
         print(error_msg)
         # 翻译失败时返回原始数据
-        return segments_data
+        return clean_segments_data
 
 
 def build_translation_context_for_chunk(chunk: List[Dict[str, Any]], all_segments: List[Dict[str, Any]], target_language: str) -> str:
@@ -250,3 +253,15 @@ def distribute_translated_text(original_chunk: List[Dict[str, Any]], translated_
             translated_segments = original_chunk
     
     return translated_segments
+
+
+def clean_segments(segments_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """清理文本片段"""
+    new_segments_data = []
+    for segment in segments_data:
+        new_segments_data.append({
+            "start": segment["start"],
+            "end": segment["end"],
+            "text": segment["text"]
+        })
+    return new_segments_data

@@ -7,10 +7,11 @@ import os
 import uuid
 import subprocess
 import json
+import tempfile
 from minio_storage import get_storage
 
 
-async def extract_video_format(video_path: str, task_id: str) -> tuple[int, int]:
+async def extract_video_format(video_path: str, task_id: str) -> str:
     """使用 FFmpeg 提取音频并存储到 MinIO"""
     
     # 从 MinIO 下载视频文件到临时位置
@@ -31,22 +32,44 @@ async def extract_video_format(video_path: str, task_id: str) -> tuple[int, int]
     
     if result.returncode == 0:
         data = json.loads(result.stdout)
-        width = -1
-        height = -1
+        width = None
+        height = None
         for stream in data.get('streams', []):
             if stream.get('codec_type') == 'video':
-                width = stream.get('width', -1)
-                height = stream.get('height', -1)
+                width = stream.get('width', None)
+                height = stream.get('height', None)
                 
-                if width > 0 and height > 0:
+                if width and height:
                     # 清理临时文件
                     try:
                         os.unlink(temp_video_path)
                     except OSError:
                         pass
-                    
-                    # 判断方向：高度大于宽度为竖屏
-                    return width, height
+
+                    # 创建format信息文件
+                    format_info = {
+                        "width": width,
+                        "height": height
+                    }
+
+                    local_format_path = os.path.join(tempfile.gettempdir(), f"video_format_{uuid.uuid4().hex}.json")
+                    with open(local_format_path, 'w', encoding='utf-8') as f:
+                        json.dump(format_info, f)
+
+                    # 上传到format信息到MinIO
+                    object_path = storage.upload_file(
+                        task_id=task_id,
+                        step="extract_video_format",
+                        local_file_path=local_format_path,
+                        object_name=f"video_format_{uuid.uuid4().hex}.json"
+                    )
+
+                    # 清理临时文件
+                    try:
+                        os.unlink(local_format_path)
+                    except OSError:
+                        pass
+                    return object_path
     
         # 清理临时文件
         try:
@@ -54,4 +77,4 @@ async def extract_video_format(video_path: str, task_id: str) -> tuple[int, int]
         except OSError:
             pass
     
-    return -1, -1
+    return None

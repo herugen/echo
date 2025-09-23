@@ -71,7 +71,7 @@ async def download_video_task(url: str, task_id: str) -> str:
     return await download_video(url, task_id)
 
 @task
-async def extract_video_format_task(video_path: str, task_id: str) -> tuple[int, int]:
+async def extract_video_format_task(video_path: str, task_id: str) -> str:
     """使用 FFmpeg 提取视频格式"""
     return await extract_video_format(video_path, task_id)
 
@@ -115,9 +115,9 @@ async def generate_subtitle_task(segments_data, task_id: str):
     return await gen_subtitle(segments_data, task_id)
 
 @task
-async def generate_translated_subtitle_task(segments_data, task_id: str, video_width: int):
+async def generate_translated_subtitle_task(segments_data, task_id: str, format_path: str):
     """生成翻译后的字幕文件"""
-    return await gen_translated_subtitle(segments_data, task_id, video_width)
+    return await gen_translated_subtitle(segments_data, task_id, format_path)
 
 @task
 async def split_audio_task(audio_path: str, segments_data: List[Dict[str, Any]], task_id: str):
@@ -150,7 +150,7 @@ async def video_translation_workflow(
     video_path = await download_video_task(url, task_id)
     
     # 2. 提取视频格式
-    video_width, video_height = await extract_video_format_task(video_path, task_id)
+    format_path = await extract_video_format_task(video_path, task_id)
 
     # 3. 提取音频
     audio_path = await extract_audio_task(video_path, task_id)
@@ -174,7 +174,7 @@ async def video_translation_workflow(
     translated_segments = await translate_text_task(segments_data, target_language, task_id)
     
     # 9. 生成翻译后的字幕
-    translated_subtitle_path = await generate_translated_subtitle_task(translated_segments, task_id, video_width)
+    translated_subtitle_path = await generate_translated_subtitle_task(translated_segments, task_id, format_path)
     
     # 10. 生成翻译后的字幕视频
     translated_subtitled_video_path = await add_translated_subtitle_to_video_task(translated_subtitle_path, task_id)
