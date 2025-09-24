@@ -8,6 +8,7 @@ import json
 import uuid
 import requests
 import asyncio
+import re
 from typing import List, Dict, Any, Optional
 from minio_storage import get_storage
 
@@ -34,7 +35,7 @@ async def translate_text(segments_data: List[Dict[str, Any]], target_language: s
         
 
         # 将片段按文本长度分组，避免单次请求过长
-        max_chunk_size = 2000  # 每个块的最大字符数
+        max_chunk_size = 1000  # 每个块的最大字符数
         chunks = []
         current_chunk = []
         current_size = 0
@@ -63,15 +64,12 @@ async def translate_text(segments_data: List[Dict[str, Any]], target_language: s
         for chunk_idx, chunk in enumerate(chunks):
             print(f"翻译第 {chunk_idx + 1}/{len(chunks)} 个块，包含 {len(chunk)} 个片段")
             
-            # 构建上下文信息
-            context_text = build_translation_context_for_chunk(chunk, clean_segments_data, target_language)
             
             # 调用 DeepSeek API 翻译文本
             translated_text = await call_deepseek_translation_api(
-                context_text, 
+                chunk, 
                 deepseek_api_key, 
                 deepseek_base_url,
-                target_language
             )
             
             if translated_text:
@@ -103,76 +101,42 @@ async def translate_text(segments_data: List[Dict[str, Any]], target_language: s
         print(f"文本翻译结果已存储到 MinIO: {object_path}")
         return translated_segments
         
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, requests.RequestException) as e:
         error_msg = f"文本翻译失败: {str(e)}"
         print(error_msg)
         # 翻译失败时返回原始数据
         return clean_segments_data
 
 
-def build_translation_context_for_chunk(chunk: List[Dict[str, Any]], all_segments: List[Dict[str, Any]], target_language: str) -> str:
-    """为翻译文本块构建上下文信息"""
-    
-    # 获取当前块的前后片段作为上下文
-    chunk_start_idx = all_segments.index(chunk[0]) if chunk[0] in all_segments else 0
-    chunk_end_idx = chunk_start_idx + len(chunk) - 1
-    
-    # 获取前后各2个片段作为上下文
-    context_before = all_segments[max(0, chunk_start_idx - 2):chunk_start_idx]
-    context_after = all_segments[chunk_end_idx + 1:min(len(all_segments), chunk_end_idx + 3)]
-    
-    # 构建上下文文本
-    context_parts = []
-    
-    # 添加语言信息
-    language_names = {
-        "zh": "中文",
-        "en": "英文", 
-        "ja": "日文",
-        "ko": "韩文",
-        "fr": "法文",
-        "de": "德文",
-        "es": "西班牙文",
-        "ru": "俄文"
-    }
-    target_lang_name = language_names.get(target_language, target_language)
-    
-    context_parts.append(f"请将以下文本翻译成{target_lang_name}，保持原文的语气和语调。")
-    
-    if context_before:
-        context_parts.append("\n前文上下文:")
-        for seg in context_before:
-            context_parts.append(f"[{seg['start']:.3f}s-{seg['end']:.3f}s] {seg['text']}")
-    
-    context_parts.append("\n需要翻译的文本片段:")
-    for seg in chunk:
-        context_parts.append(f"[{seg['start']:.3f}s-{seg['end']:.3f}s] {seg['text']}")
-    
-    if context_after:
-        context_parts.append("\n后文上下文:")
-        for seg in context_after:
-            context_parts.append(f"[{seg['start']:.3f}s-{seg['end']:.3f}s] {seg['text']}")
-    
-    return "\n".join(context_parts)
 
-
-async def call_deepseek_translation_api(context_text: str, api_key: str, base_url: str, target_language: str) -> Optional[str]:
+async def call_deepseek_translation_api(chunk: List[Dict[str, Any]], api_key: str, base_url: str) -> Optional[str]:
     """调用 DeepSeek API 进行文本翻译"""
+
     
-    prompt = f"""你是一个专业的翻译助手。请将以下文本翻译成目标语言，保持原文的语气、语调和表达方式。
+    # 构建更详细的上下文
+    context_parts = []
+    context_parts.append("请将以下文本翻译成中文，保持原文的语气和语调。")
+    context_parts.append("\n重要：必须确保每一行原文对应一行翻译结果，行数必须完全匹配！")
+    context_parts.append(f"\n原文共有 {len(chunk)} 行，请确保翻译结果也是 {len(chunk)} 行。")
+    context_parts.append("\n需要翻译的文本片段:")
+    
+    for i, seg in enumerate(chunk):
+        context_parts.append(f"\n第{i+1}行: {seg['text']}")
+    
+    context_text = "".join(context_parts)
+
+    prompt = f"""你是一个专业的翻译助手。请严格按照要求翻译以下文本。
 
 翻译要求：
-1. 保持时间戳信息不变
-2. 根据上下文语境选择最合适的翻译
-3. 保持原文的语言风格和语调
-4. 确保翻译自然流畅，符合目标语言的表达习惯
-5. 如果是口语化内容，翻译后也要保持口语化特点
-
-请只返回翻译后的文本片段，不要包含时间戳信息，每个片段占一行。
+1. 必须逐行翻译，原文有多少行，翻译结果就必须有多少行
+2. 原文有 {len(chunk)} 行，翻译结果也必须是 {len(chunk)} 行
+3. 每行翻译结果占一行，不要添加编号、序号或其他格式
+4. 保持原文的语言风格和语调
+5. 不要合并行，不要拆分行
 
 {context_text}
 
-翻译后的文本："""
+翻译后的文本（必须 {len(chunk)} 行）："""
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -192,6 +156,7 @@ async def call_deepseek_translation_api(context_text: str, api_key: str, base_ur
     }
     
     try:
+        #print(f"调用 DeepSeek 翻译 API: {prompt}")
         response = requests.post(
             f"{base_url}/chat/completions",
             headers=headers,
@@ -203,12 +168,13 @@ async def call_deepseek_translation_api(context_text: str, api_key: str, base_ur
             result = response.json()
             translated_text = result["choices"][0]["message"]["content"].strip()
             print(f"DeepSeek 翻译 API 调用成功，返回文本长度: {len(translated_text)}")
+            #print(f"翻译后的文本: {translated_text}")
             return translated_text
         else:
             print(f"DeepSeek 翻译 API 调用失败，状态码: {response.status_code}")
             return None
             
-    except Exception as e:
+    except (requests.RequestException, KeyError, ValueError) as e:
         print(f"调用 DeepSeek 翻译 API 时出错: {str(e)}")
         return None
 
@@ -219,39 +185,29 @@ def distribute_translated_text(original_chunk: List[Dict[str, Any]], translated_
     # 按行分割翻译后的文本
     translated_lines = [line.strip() for line in translated_text.split('\n') if line.strip()]
     
+    # 清理翻译后的文本，删除"第X行："前缀
+    cleaned_lines = []
+    for line in translated_lines:
+        # 检查是否以"第X行："开头，如果是则删除前缀
+        # 匹配"第X行："或"第X行:"等变体，支持中英文冒号
+        pattern = r'^第\d+行[：:]\s*'
+        cleaned_line = re.sub(pattern, '', line)
+        cleaned_lines.append(cleaned_line)
+    
     translated_segments = []
     
     # 如果翻译后的行数与原片段数相同，直接对应
-    if len(translated_lines) == len(original_chunk):
+    if len(cleaned_lines) == len(original_chunk):
         for i, segment in enumerate(original_chunk):
             translated_segment = segment.copy()
-            translated_segment["text"] = translated_lines[i]
+            translated_segment["text"] = cleaned_lines[i]
             translated_segments.append(translated_segment)
     else:
         # 如果行数不匹配，尝试智能分配
-        print(f"警告: 翻译后文本行数({len(translated_lines)})与原片段数({len(original_chunk)})不匹配")
-        
-        # 按比例分配或保持原文本
-        if len(translated_lines) > 0:
-            # 简单策略：将翻译后的文本合并后重新分配
-            merged_text = " ".join(translated_lines)
-            # 按原片段的长度比例分配
-            total_original_length = sum(len(seg["text"]) for seg in original_chunk)
-            
-            current_pos = 0
-            for segment in original_chunk:
-                segment_ratio = len(segment["text"]) / total_original_length
-                segment_length = int(len(merged_text) * segment_ratio)
-                
-                translated_segment = segment.copy()
-                translated_segment["text"] = merged_text[current_pos:current_pos + segment_length].strip()
-                translated_segments.append(translated_segment)
-                
-                current_pos += segment_length
-        else:
-            # 如果翻译失败，保持原文本
-            translated_segments = original_chunk
-    
+        print(f"警告: 翻译后文本行数({len(cleaned_lines)})与原片段数({len(original_chunk)})不匹配")
+        print(f"翻译后的文本: {cleaned_lines}")
+        print(f"原片段: {json.dumps(original_chunk, ensure_ascii=False, indent=2)}")
+        translated_segments = original_chunk
     return translated_segments
 
 

@@ -92,16 +92,6 @@ async def speech_to_text_task(audio_path: str, task_id: str):
 # 文本处理任务
 # -----------------------------------------------------------------------------
 @task
-async def add_subtitle_to_video_task(subtitle_path: str, task_id: str):
-    """给视频加上原生字幕"""
-    return await add_subtitle_to_video(subtitle_path, task_id)
-
-@task
-async def add_translated_subtitle_to_video_task(translated_subtitle_path: str, task_id: str):
-    """给视频加上翻译后的字幕"""
-    return await add_translated_subtitle_to_video(translated_subtitle_path, task_id)
-
-@task
 async def translate_text_task(segments_data, target_language: str, task_id: str):
     """使用 DeepSeek 翻译文本片段"""
     return await translate_text(segments_data, target_language, task_id)
@@ -165,22 +155,12 @@ async def video_translation_workflow(
     # 6. 生成字幕
     subtitle_path = await generate_subtitle_task(segments_data, task_id)
     
-    # 7. 生成带字幕的中间视频文件
-    subtitled_video_path = await add_subtitle_to_video_task(subtitle_path, task_id)
-    if subtitled_video_path:
-        print(f"带字幕的中间视频已生成: {subtitled_video_path}")
-
     # 8. 翻译文本
     translated_segments = await translate_text_task(segments_data, target_language, task_id)
     
     # 9. 生成翻译后的字幕
     translated_subtitle_path = await generate_translated_subtitle_task(translated_segments, task_id, format_path)
     
-    # 10. 生成翻译后的字幕视频
-    translated_subtitled_video_path = await add_translated_subtitle_to_video_task(translated_subtitle_path, task_id)
-    if translated_subtitled_video_path:
-        print(f"带翻译字幕的中间视频已生成: {translated_subtitled_video_path}")
-
     # 11. TTS 生成
     tts_segments = await generate_tts_task(translated_segments, target_language, task_id)
     

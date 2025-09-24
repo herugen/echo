@@ -43,10 +43,8 @@ async def check_task_status(task_id: str):
         ("speech_to_text", "语音识别", "speech_to_text"),
         ("split_audio", "分割音频", "split_audio"),
         ("gen_subtitle", "生成字幕", "gen_subtitle"),
-        ("add_subtitle", "生成字幕视频", "add_subtitle"),
         ("translate_text", "文本翻译", "translate_text"),
         ("gen_translated_subtitle", "生成翻译后的字幕", "gen_translated_subtitle"),
-        ("add_translated_subtitle", "生成翻译后的字幕视频", "add_translated_subtitle"),
         ("generate_tts", "TTS生成", "generate_tts"),
         ("replace_audio", "音频替换", "replace_audio")
     ]
@@ -204,23 +202,6 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
                     print("❌ 未找到完整的字幕文件")
                     return
 
-        # 3.5. 生成字幕视频
-        if any(task[0] == "add_subtitle" for task in missing_tasks):
-            print("🎬 生成带字幕的中间视频...")
-            subtitled_video_path = await add_subtitle_to_video(subtitle_path, task_id)
-            if subtitled_video_path:
-                print(f"✅ 字幕视频生成完成: {os.path.basename(subtitled_video_path)}")
-            else:
-                print("⚠️  字幕视频生成失败，继续后续流程")
-        else:
-            # 检查是否已有字幕视频
-            subtitle_video_files = storage.list_files(task_id, "add_subtitle")
-            if subtitle_video_files:
-                print(f"✅ 使用已生成的字幕视频: {os.path.basename(subtitle_video_files[0]['object_name'])}")
-            else:
-                print("ℹ️  未找到字幕视频文件")
-
-
         # 5. 翻译文本 (如果需要)
         if any(task[0] == "translate_text" for task in missing_tasks):
             print(f"🌍 翻译文本 (目标语言: {target_language})...")
@@ -262,23 +243,6 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
                 else:
                     print("❌ 未找到完整的字幕文件")
                     return
-
-        # 3.5. 生成字幕视频 (如果需要)
-        if any(task[0] == "add_translated_subtitle" for task in missing_tasks):
-            print("🎬 生成带翻译字幕的中间视频...")
-            translated_subtitled_video_path = await add_translated_subtitle_to_video(translated_subtitle_path, task_id)
-            if translated_subtitled_video_path:
-                print(f"✅ 翻译字幕视频生成完成: {os.path.basename(translated_subtitled_video_path)}")
-            else:
-                print("⚠️  翻译字幕视频生成失败，继续后续流程")
-        else:
-            # 检查是否已有字幕视频
-            translated_subtitle_video_files = storage.list_files(task_id, "add_translated_subtitle")
-            if subtitle_video_files:
-                print(f"✅ 使用已生成的翻译字幕视频: {os.path.basename(translated_subtitle_video_files[0]['object_name'])}")
-            else:
-                print("ℹ️  未找到翻译字幕视频文件")
-        
 
         # 8. TTS生成 (如果需要)
         if any(task[0] == "generate_tts" for task in missing_tasks):

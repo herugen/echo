@@ -7,9 +7,7 @@ import os
 import uuid
 import tempfile
 import asyncio
-import subprocess
-import json
-from typing import List, Dict
+import platform
 from minio_storage import get_storage
 
 async def add_translated_subtitle_to_video(subtitle_path: str, task_id: str) -> str:
@@ -81,13 +79,13 @@ async def add_translated_subtitle_to_video(subtitle_path: str, task_id: str) -> 
         return None
 
 
-async def generate_subtitled_video(input_video_path: str, ass_path: str, task_id: str) -> str:
+async def generate_subtitled_video(input_video_path: str, srt_path: str, task_id: str) -> str:
     """
     使用FFmpeg生成带字幕的视频文件
     
     Args:
         input_video_path: 输入视频文件路径
-        ass_path: ASS字幕文件路径
+        srt_path: SRT字幕文件路径
         task_id: 任务ID
         
     Returns:
@@ -98,21 +96,23 @@ async def generate_subtitled_video(input_video_path: str, ass_path: str, task_id
         output_path = os.path.join(tempfile.gettempdir(), f"translated_subtitled_{task_id}_{uuid.uuid4().hex}.mp4")
         
         # 构建FFmpeg命令
-        # 使用subtitles滤镜添加ASS字幕，支持word级别高亮
-        subtitle_filter = f"subtitles={ass_path}"
-        
-        cmd = [
-            "ffmpeg",
+        # 使用subtitles滤镜添加SRT字幕
+        subtitle_filter = f"subtitles={srt_path}"
+        cmd = ["ffmpeg"]
+
+        # 如果在MacOS, 则加上-hwaccel videotoolbox
+        if platform.system() == "Darwin":
+            cmd.append("-hwaccel")
+            cmd.append("videotoolbox")
+
+        cmd.extend([
             "-i", input_video_path,
             "-vf", subtitle_filter,
             "-c:a", "copy",  # 保持原音频不变
-            "-c:v", "libx264",  # 使用H.264编码
-            "-preset", "fast",  # 快速编码
-            "-crf", "23",  # 质量设置
             "-y",  # 覆盖输出文件
             output_path
-        ]
-        
+        ])
+
         print(f"执行FFmpeg命令: {' '.join(cmd)}")
         
         # 执行FFmpeg命令
@@ -129,9 +129,9 @@ async def generate_subtitled_video(input_video_path: str, ass_path: str, task_id
             print(f"错误输出: {stderr.decode()}")
             raise RuntimeError(f"FFmpeg执行失败: {stderr.decode()}")
         
-        print(f"带翻译字幕视频生成成功: {output_path}")
+        print(f"带SRT字幕视频生成成功: {output_path}")
         return output_path
         
     except (OSError, ValueError, RuntimeError) as e:
-        print(f"生成带翻译字幕视频时出错: {str(e)}")
+        print(f"生成带SRT字幕视频时出错: {str(e)}")
         raise

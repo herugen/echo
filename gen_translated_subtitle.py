@@ -57,29 +57,29 @@ async def gen_translated_subtitle(segments_data: List[Dict[str, Any]], task_id: 
         
         print(f"视频格式信息: {format_info}，视频方向: {is_vertical}")
 
-        ass_content = generate_ass_from_segments(segments_data, is_vertical)
+        srt_content = generate_srt_from_segments(segments_data)
 
-        # 创建横屏字幕文件
-        ass_path = os.path.join(tempfile.gettempdir(), f"subtitle_{task_id}_{uuid.uuid4().hex}.ass")
-        with open(ass_path, 'w', encoding='utf-8') as f:
-            f.write(ass_content)
+        # 创建SRT字幕文件
+        srt_path = os.path.join(tempfile.gettempdir(), f"subtitle_{task_id}_{uuid.uuid4().hex}.srt")
+        with open(srt_path, 'w', encoding='utf-8') as f:
+            f.write(srt_content)
         
-        # 上传横屏字幕到MinIO
-        object_name = f"subtitle_{uuid.uuid4().hex}.ass"
+        # 上传SRT字幕到MinIO
+        object_name = f"subtitle_{uuid.uuid4().hex}.srt"
         minio_path = storage.upload_file(
             task_id=task_id,
             step="gen_translated_subtitle",
-            local_file_path=ass_path,
+            local_file_path=srt_path,
             object_name=object_name
         )
         
         # 清理临时文件
         try:
-            os.unlink(ass_path)
+            os.unlink(srt_path)
         except OSError as e:
             print(f"清理临时文件时出错: {e}")
         
-        print(f"横屏字幕文件已生成: {minio_path}")
+        print(f"SRT字幕文件已生成: {minio_path}")
         
         # 返回字幕文件信息
         return minio_path
@@ -89,55 +89,36 @@ async def gen_translated_subtitle(segments_data: List[Dict[str, Any]], task_id: 
         return None
 
 
-def generate_ass_from_segments(segments_data: List[Dict[str, Any]], is_vertical: bool) -> str:
+def generate_srt_from_segments(segments_data: List[Dict[str, Any]]) -> str:
     """
-    从翻译后的segments数据生成ASS字幕内容，使用segment级别显示翻译文本
+    从翻译后的segments数据生成SRT字幕内容
     
     Args:
         segments_data: 翻译后的文本片段数据，只使用text字段，忽略words字段
-        is_vertical: 是否为竖屏
     Returns:
-        str: ASS格式的字幕内容
+        str: SRT格式的字幕内容
     """
-    # ASS文件头部
-    ass_content = """[Script Info]
-Title: Word-level Highlighted Subtitles for Vertical Video
-ScriptType: v4.00+
-WrapStyle: 0
-ScaledBorderAndShadow: yes
-YCbCr Matrix: TV.601
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,12,&H0000FFFF,&H0000FFFF,&H00000000,&H8000FFFF,1,0,0,0,100,100,0,0,1,2,0,0,5,10,10,20,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-    
-    # 根据视频方向选择样式
-    default_style = "Default"
+    srt_content = ""
     
     # 翻译后的segments直接使用segment级别，忽略words字段
-    for segment in segments_data:
+    for i, segment in enumerate(segments_data, 1):
         if not segment.get("text", "").strip():
             continue
             
-        start_time = format_ass_timestamp(segment["start"])
-        end_time = format_ass_timestamp(segment["end"])
+        start_time = format_srt_timestamp(segment["start"])
+        end_time = format_srt_timestamp(segment["end"])
         text = segment["text"].strip()
 
-        # 根据视频方向，按照max_char_count切割
-        lines = split_text_chinese(text, is_vertical)
-        text = r"\N".join(lines)  # ASS换行符
-
-        ass_content += f"Dialogue: 0,{start_time},{end_time},{default_style},,10,10,20,,{text}\n"
+        # SRT格式：序号、时间、文本、空行
+        srt_content += f"{i}\n"
+        srt_content += f"{start_time} --> {end_time}\n"
+        srt_content += f"{text}\n\n"
     
-    return ass_content
+    return srt_content
 
-def format_ass_timestamp(seconds: float) -> str:
+def format_srt_timestamp(seconds: float) -> str:
     """
-    将秒数转换为ASS时间戳格式 (H:MM:SS.CC)
+    将秒数转换为SRT时间戳格式 (HH:MM:SS,mmm)
     
     Args:
         seconds: 秒数
@@ -148,34 +129,6 @@ def format_ass_timestamp(seconds: float) -> str:
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
-    centisecs = int((seconds % 1) * 100)
+    milliseconds = int((seconds % 1) * 1000)
     
-    return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
-
-
-# 按最大宽度对text进行分行（中文宽，英文半宽）
-def split_text_chinese(text, is_vertical):
-    lines = []
-    max_char_count = 15 if is_vertical else 45
-    print(f"每行最大中文字数: {max_char_count}")
-
-    # 根据中文字数，按照max_char_count切割
-    # 说明:
-    #   - 只统计中文字符（范围：\u4e00-\u9fff），遇到max_char_count就换行
-    #   - 其他字符（如英文、标点）直接跟随，不计入chinese_char_count
-    #   - 保证每行最多max_char_count个中文，其余自动分行
-    current_line = ""
-    chinese_count = 0
-    for char in text:
-        # 判断是否为中文字符
-        if '\u4e00' <= char <= '\u9fff':
-            chinese_count += 1
-        current_line += char
-        if chinese_count >= max_char_count:
-            lines.append(current_line)
-            current_line = ""
-            chinese_count = 0
-    if current_line:
-        lines.append(current_line)
-
-    return lines
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
