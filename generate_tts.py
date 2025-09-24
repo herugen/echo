@@ -74,6 +74,67 @@ async def generate_tts_audio(text_segments: List[Dict[str, Any]], target_languag
     print(f"TTS 生成完成，生成了 {len(tts_segments)} 个音频片段")
     return tts_segments
 
+async def generate_tts_audio_long(text: str, target_language: str, audio_path: str, task_id: str) -> str:
+    """使用 IndexTTS speaker 模式生成翻译后的音频并存储到 MinIO
+    
+    Args:
+        text: 翻译后的文本
+        target_language: 目标语言（当前版本未使用，保留用于未来扩展）
+        audio_path: 音频文件路径
+    """
+    # 记录目标语言用于日志（未来可能用于语言特定的TTS配置）
+    print(f"TTS 生成开始，目标语言: {target_language}")
+    
+    # 获取 TTS 服务 URL
+    tts_service_url = os.getenv("TTS_SERVICE_URL")
+    if not tts_service_url:
+        raise ValueError("TTS_SERVICE_URL 环境变量未设置")
+    
+    # 确保 URL 以 / 结尾
+    if not tts_service_url.endswith('/'):
+        tts_service_url += '/'
+    
+    # 获取存储实例
+    storage = get_storage()
+    
+    temp_audio_path = storage.download_file(
+        task_id=task_id,
+        step="extract_audio",
+        object_name=os.path.basename(audio_path)
+    )
+
+    tts_audio_path = None
+    try:
+        # 生成 TTS 音频
+        tts_audio_data = await synthesize_speaker_tts(
+            text=text,
+            prompt_audio_path=temp_audio_path,
+            tts_service_url=tts_service_url,
+            task_id=task_id,
+            storage=storage
+        )
+        
+        if tts_audio_data:
+            # 保存 TTS 音频到 MinIO
+            tts_filename = f"tts_whole_{uuid.uuid4().hex[:8]}.wav"
+            object_path = storage.upload_data(
+                task_id=task_id,
+                step="generate_tts",
+                data=tts_audio_data,
+                object_name=tts_filename
+            )
+            
+            tts_audio_path = object_path
+            print(f"TTS 音频片段 已生成: {object_path}")
+        else:
+            print(f"警告: TTS 音频片段 生成失败")
+            
+    except (ValueError, OSError, requests.exceptions.RequestException) as e:
+        print(f"生成 TTS 音频片段 失败: {e}")
+
+    print(f"TTS 生成完成，生成了 {tts_audio_path}")
+    return tts_audio_path
+
 
 async def get_audio_segments_for_tts(task_id: str, storage) -> List[str]:
     """获取用于 TTS 的音频片段路径列表"""

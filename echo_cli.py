@@ -26,8 +26,8 @@ from add_subtitle import add_subtitle_to_video
 from add_translated_subtitle import add_translated_subtitle_to_video
 from translate_text import translate_text
 from split_audio import split_audio_by_subtitle
-from generate_tts import generate_tts_audio
-from replace_audio import replace_audio_tracks
+from generate_tts import generate_tts_audio_long
+from replace_audio import replace_audio_tracks_all
 from minio_storage import get_storage
 
 
@@ -103,7 +103,7 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
         subtitle_path = None
         translated_subtitle_path = None
         audio_segments = None
-        tts_segments = None
+        tts_audio_path = None
         
         # 1. 下载视频 (如果需要)
         if any(task[0] == "download" for task in missing_tasks):
@@ -247,21 +247,23 @@ async def echo(task_id: str, target_language: str = "zh", url: str = None):
         # 8. TTS生成 (如果需要)
         if any(task[0] == "generate_tts" for task in missing_tasks):
             print("🔊 TTS语音合成...")
-            tts_segments = await generate_tts_audio(translated_segments, target_language, task_id)
-            print(f"✅ TTS生成完成，生成了 {len(tts_segments)} 个片段")
+            to_translate_segments = ""
+            for segment in translated_segments:
+                to_translate_segments += segment["text"] + "\n"
+            tts_audio_path = await generate_tts_audio_long(to_translate_segments, target_language, audio_path, task_id)
+            print(f"✅ TTS生成完成: {os.path.basename(tts_audio_path)}")
         else:
             # 使用已生成的TTS
             tts_files = storage.list_files(task_id, "generate_tts")
             if tts_files:
-                tts_segments = [file_info["object_name"] for file_info in tts_files]
-                print(f"✅ 使用已生成的TTS: {len(tts_segments)} 个片段")
-        
+                tts_audio_path = tts_files[0]["object_name"]
+                print(f"✅ 使用已生成的TTS: {os.path.basename(tts_audio_path)}")
 
 
         # 9. 替换音频 (如果需要)
         if any(task[0] == "replace_audio" for task in missing_tasks):
             print("🔄 替换音频...")
-            final_video = await replace_audio_tracks(video_path, audio_path, segments_data, tts_segments, task_id)
+            final_video = await replace_audio_tracks_all(video_path, tts_audio_path, task_id)
             print(f"✅ 音频替换完成: {os.path.basename(final_video)}")
         else:
             # 使用已替换的音频

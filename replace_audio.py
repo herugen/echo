@@ -10,7 +10,7 @@ import re
 from typing import List, Dict, Any
 from minio_storage import get_storage
 import shutil
-
+import platform
 
 async def replace_audio_tracks(video_path: str, audio_path: str, segments_data: List[Dict[str, Any]], tts_audio_segments: List[str], task_id: str, background_volume: float = 0.15) -> str:
     """根据TTS音频替换视频中的音频轨道
@@ -87,6 +87,59 @@ async def replace_audio_tracks(video_path: str, audio_path: str, segments_data: 
     finally:
         # 清理所有临时文件
         temp_files_to_clean = [temp_video_path] + temp_tts_files
+        cleanup_temp_files(temp_files_to_clean)
+
+
+
+async def replace_audio_tracks_all(video_path: str, tts_audio_path: str, task_id: str) -> str:
+    """根据TTS音频替换视频中的音频轨道
+    
+    Args:
+        video_path: 视频文件路径
+        tts_audio_path: 音频文件路径
+        task_id: 任务ID
+    """
+    print(f"开始音频替换任务")
+        
+    # 获取存储实例
+    storage = get_storage()
+    
+    # 从 MinIO 下载视频文件到临时位置
+    temp_video_path = storage.download_file(
+        task_id=task_id,
+        step="download",
+        object_name=os.path.basename(video_path)
+    )
+    if not temp_video_path or not os.path.exists(temp_video_path):
+        raise ValueError("无法找到视频文件")
+
+    # 从 MinIO 下载音频文件到临时位置
+    tts_audio_path = storage.download_file(
+        task_id=task_id,
+        step="generate_tts",
+        object_name=os.path.basename(tts_audio_path)
+    )
+    if not tts_audio_path or not os.path.exists(tts_audio_path):
+        raise ValueError("无法找到音频文件")
+    
+    try:
+        final_video_path = await replace_video_audio(temp_video_path, tts_audio_path)
+        
+        # 上传最终视频到 MinIO
+        final_video_filename = f"final_video_{uuid.uuid4().hex}.mp4"
+        object_path = storage.upload_file(
+            task_id=task_id,
+            step="replace_audio",
+            local_file_path=final_video_path,
+            object_name=final_video_filename
+        )
+        
+        print(f"音频替换完成，最终视频已存储: {final_video_path} {object_path}")
+        return object_path
+        
+    finally:
+        # 清理所有临时文件
+        temp_files_to_clean = [temp_video_path]
         cleanup_temp_files(temp_files_to_clean)
 
 
@@ -495,15 +548,19 @@ async def probe_audio_format(audio_path: str) -> Dict[str, Any]:
             "codec": "pcm_s16le"
         }
 
-
 async def replace_video_audio(video_path: str, audio_path: str) -> str:
     """将混合后的音频替换到视频中"""
     print("开始替换视频音频")
     
     final_video_path = f"/tmp/final_video_{uuid.uuid4().hex}.mp4"
     
-    cmd = [
-        "ffmpeg",
+    cmd = ["ffmpeg"]
+
+    if platform.system() == "darwin":
+        cmd.append("-hwaccel")
+        cmd.append("videotoolbox")
+
+    cmd.extend([
         "-i", video_path,  # 视频输入
         "-i", audio_path,   # 音频输入
         "-c:v", "copy",     # 视频流复制，不重新编码
@@ -513,7 +570,7 @@ async def replace_video_audio(video_path: str, audio_path: str) -> str:
         "-shortest",        # 以最短的流为准
         "-y",
         final_video_path
-    ]
+    ])
     
     try:
         subprocess.run(cmd, capture_output=True, check=True, text=True)
@@ -523,8 +580,6 @@ async def replace_video_audio(video_path: str, audio_path: str) -> str:
     except subprocess.CalledProcessError as e:
         print(f"视频音频替换失败: {e.stderr}")
         raise RuntimeError(f"视频音频替换失败: {e.stderr}") from e
-
-
 
 def sort_tts_files_by_index(tts_files: List[str]) -> List[str]:
     """根据文件名中的索引信息对TTS音频文件进行排序
