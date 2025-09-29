@@ -1,14 +1,41 @@
-#!/bin/bash
+import whisperx
+import gc
 
-curl -X POST "http://localhost:8000/translate" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://x.com/BarackObama/status/1969421892458041698",
-    "target_language": "zh"
-  }'
-  
+device = "cpu"
+audio_file = "./runs/video-translation/20250929-193157-5debce/audio/source.wav"
+batch_size = 16 # reduce if low on GPU mem
+compute_type = "int8" # change to "int8" if low on GPU mem (may reduce accuracy)
 
+# 1. Transcribe with original whisper (batched)
+model = whisperx.load_model("large-v3", device, compute_type=compute_type)
 
-ffmpeg -i /Users/herugen/Downloads/download_e26a8e86908c4d02af6af355328e8ea0_video_678d5f70464b4f739de57efcc5701f5d.mp4 -vf subtitles=/Users/herugen/Downloads/subtitle_79134f3cddc049849caead351d8db25f.ass -c:a copy -c:v copy -preset fast -crf 23 -y /Users/herugen/Downloads/translated_subtitled_task_1234567_13efd8ceebcc426d8d3ec74a5f640257.mp4
+# save model to local path (optional)
+# model_dir = "/path/"
+# model = whisperx.load_model("large-v2", device, compute_type=compute_type, download_root=model_dir)
 
-ffmpeg -i /Users/herugen/Downloads/download_e26a8e86908c4d02af6af355328e8ea0_video_678d5f70464b4f739de57efcc5701f5d.mp4 -vf subtitles=/Users/herugen/Downloads/subtitle_79134f3cddc049849caead351d8db25f.ass -c:a copy -y /Users/herugen/Downloads/translated_subtitled_task_1234567_13efd8ceebcc426d8d3ec74a5f640257.mp4
+audio = whisperx.load_audio(audio_file)
+result = model.transcribe(audio, batch_size=batch_size)
+print(result["segments"]) # before alignment
+
+# delete model if low on GPU resources
+# import gc; import torch; gc.collect(); torch.cuda.empty_cache(); del model
+
+# 2. Align whisper output
+model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
+result = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
+
+print(result["segments"]) # after alignment
+
+# delete model if low on GPU resources
+# import gc; import torch; gc.collect(); torch.cuda.empty_cache(); del model_a
+
+# 3. Assign speaker labels
+diarize_model = whisperx.diarize.DiarizationPipeline(use_auth_token=YOUR_HF_TOKEN, device=device)
+
+# add min/max number of speakers if known
+diarize_segments = diarize_model(audio)
+# diarize_model(audio, min_speakers=min_speakers, max_speakers=max_speakers)
+
+result = whisperx.assign_word_speakers(diarize_segments, result)
+print(diarize_segments)
+print(result["segments"]) # segments are now assigned speaker IDs

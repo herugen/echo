@@ -1,24 +1,9 @@
-# Web 框架
-fastapi==0.115.0
-uvicorn==0.30.0
-
-# 工作流框架
-prefect==3.0.0
-
-# 音视频处理
-faster-whisper==1.2.0
-whisperx==3.1.1
-torch>=2.0.0
-torchaudio>=2.0.0
-
-# HTTP 客户端
+# Pipeline tool dependencies
 requests==2.32.3
-
-# 数据验证和序列化
-pydantic==2.9.0
-
-# 环境变量管理
+typer==0.12.3
+click==8.1.7
 python-dotenv==1.0.1
+yt-dlp==2025.09.26
 
-# MinIO 对象存储
-minio==7.2.5
+# Speech / audio processing
+whisperx==3.4.2

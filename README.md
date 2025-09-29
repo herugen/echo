@@ -1,6 +1,6 @@
-# 视频翻译工作流服务
+# Echo CLI 视频翻译工具
 
-基于 Prefect 2.x 的视频翻译工作流服务，支持将视频中的语音翻译成目标语言。
+一个基于命令行的本地视频翻译工具，支持将视频中的语音翻译成目标语言、生成字幕并输出替换音频后的新视频。
 
 ## 功能特性
 
@@ -15,13 +15,77 @@
 
 ## 技术栈
 
-- **工作流框架**: Prefect 2.x
-- **Web 框架**: FastAPI
-- **数据库**: PostgreSQL + Redis
+- **CLI 框架**: Typer
 - **音视频处理**: FFmpeg
-- **语音识别**: Fast-Whisper
-- **AI 服务**: DeepSeek API
-- **容器化**: Docker + Docker Compose
+- **语音识别**: WhisperX
+- **AI 服务**: DeepSeek API（可选）
+
+## 快速开始
+
+### 1. 克隆项目
+```bash
+git clone <repository-url>
+cd echo
+```
+
+### 2. 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 准备 FFmpeg/FFprobe
+确保系统已安装 FFmpeg 和 FFprobe，并在 `PATH` 中可用。
+
+### 4. 配置环境变量（可选）
+在项目根目录创建 `.env`：
+```bash
+DEEPSEEK_API_KEY=your_api_key
+TTS_SERVICE_URL=https://your-tts-service
+```
+
+### 5. 运行翻译
+```bash
+python cli.py translate --url https://example.com/video.mp4 --lang zh
+# 或使用本地文件
+python cli.py translate --local-video ./sample.mp4 --lang en
+```
+
+默认将在 `runs/<slug>/<timestamp-hash>/` 下输出所有中间产物与最终视频。
+
+## CLI 命令
+
+- `python cli.py translate ...` 启动翻译流程
+- `python cli.py list-runs` 查看历史运行
+- `python cli.py show-run <path>` 查看指定运行的 metadata
+
+## 目录结构
+
+`runs/<slug>/<run-id>/` 下包含：
+
+- `raw/` 原始视频
+- `audio/` 提取音频与分段
+- `transcripts/` 识别结果与字幕
+- `translations/` 翻译结果与字幕
+- `tts/` 生成的语音片段
+- `video/` 最终视频
+- `logs/metadata.json` 运行配置与 Artefacts 列表
+
+## 工作流程
+
+1. 下载或复制视频到 `raw/`
+2. 提取视频格式信息
+3. 提取原音频并分割
+4. 使用 WhisperX 识别语音生成字幕
+5. 调用 DeepSeek 翻译文本（如配置了 API Key）
+6. 生成原文与翻译字幕文件
+7. 调用 TTS 合成语音（如果配置 TTS 服务）
+8. 使用新音频替换原视频音轨，输出最终视频
+
+## 注意事项
+
+- DeepSeek/TTS 服务均为可选功能，未配置时将跳过对应步骤
+- `--keep-temp` 可保留临时文件用于调试
+- `runs/` 目录可能快速增长，定期清理旧 run
 
 ## 快速开始
 
@@ -58,7 +122,7 @@ curl -X POST "http://localhost:8000/translate" \
 ## 工作流程
 
 1. **接收请求**: 用户通过 HTTP API 提交视频链接
-2. **下载视频**: 使用 Cobalt 服务下载视频文件
+2. **下载视频**: 使用 yt-dlp 下载视频文件
 3. **提取音频**: 使用 FFmpeg 提取音频轨道（WAV 格式，44.1kHz，立体声）
 4. **语音识别**: 使用 Fast-Whisper 进行语音转文字
 5. **文本修正**: 使用 DeepSeek 修正识别错误
