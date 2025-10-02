@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
-from typing import Iterable, List
 
 from ..config import PipelineConfig
 from ..context import PipelineContext
-
-
-def _run_ffmpeg(args: Iterable[str]) -> None:
-    subprocess.run(list(args), check=True, capture_output=True, text=True)
+from ..utils import run_ffmpeg
 
 
 def extract_audio_track(
@@ -34,6 +29,6 @@ def extract_audio_track(
         "2",
         str(target),
     ]
-    _run_ffmpeg(cmd)
+    run_ffmpeg(cmd)
     return target
 

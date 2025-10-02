@@ -17,6 +17,7 @@ from .stages import (
     translate_segments,
     generate_source_subtitles,
     generate_translated_subtitles,
+    burn_translated_subtitles,
 )
 
 
@@ -83,6 +84,15 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     metadata["artifacts"]["subtitle_translated"] = str(translated_subtitle)
     stages.append({"name": "subtitle_translated", "path": str(translated_subtitle)})
 
+    final_video = burn_translated_subtitles(
+        video_path,
+        translated_subtitle,
+        config,
+        context,
+    )
+    metadata["artifacts"]["video_final"] = str(final_video)
+    stages.append({"name": "burn_translated_subtitles", "path": str(final_video)})
+
     metadata["stages"] = stages
 
     metadata["status"] = "completed"
@@ -90,7 +100,7 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
 
     return PipelineResult(
         run_id=context.run_id,
-        output_video=None,
+        output_video=str(final_video),
         context=context,
         artifacts={k: str(v) if not isinstance(v, list) else [str(i) for i in v] for k, v in metadata["artifacts"].items()},
     )

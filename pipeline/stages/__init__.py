@@ -7,6 +7,7 @@ from .speech import transcribe_audio
 from .segment import split_transcript_segments
 from .subtitles import generate_source_subtitles, generate_translated_subtitles
 from .translate import translate_segments
+from .overlay import burn_translated_subtitles
 
 __all__ = [
     "download_video",
@@ -17,5 +18,6 @@ __all__ = [
     "generate_source_subtitles",
     "translate_segments",
     "generate_translated_subtitles",
+    "burn_translated_subtitles",
 ]
 
