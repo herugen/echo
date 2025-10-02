@@ -149,17 +149,6 @@ def transcribe_audio(
     with final_output.open("w", encoding="utf-8") as fp:
         json.dump(data, fp, ensure_ascii=False, indent=2)
 
-    # Copy additional artifacts if they exist
-    extra_extensions = ["srt", "vtt", "txt", "tsv"]
-    for ext in extra_extensions:
-        src = raw_output_dir / f"{container_stem}.{ext}"
-        if src.exists():
-            dest = transcripts_dir / f"transcript.{ext}"
-            dest.write_bytes(src.read_bytes())
-
-    if not config.keep_temp:
-        shutil.rmtree(raw_output_dir, ignore_errors=True)
-
     return data, final_output
 
 

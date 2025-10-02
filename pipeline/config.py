@@ -31,7 +31,7 @@ class PipelineConfig:
     whisper_vad_method: str = "silero"
     whisper_vad_onset: float = 0.5
     whisper_vad_offset: float = 0.363
-    whisper_vad_chunk_size: int = 30
+    whisper_vad_chunk_size: int = 15
     whisper_segment_max_words: int = 20
     whisper_segment_max_chars: int = 80
     whisper_cache_dir: Path = Path.home() / ".cache"
@@ -42,13 +42,30 @@ class PipelineConfig:
     tts_service_url: Optional[str] = None
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
+    remote_download_host: Optional[str] = None
+    remote_download_user: Optional[str] = None
+    remote_download_password: Optional[str] = None
+    remote_download_workdir: str = "/tmp/echo-downloads"
+    remote_download_yt_dlp_path: str = "yt-dlp"
 
     def validate(self) -> None:
         if not self.source_url and not self.local_video:
             raise ValueError("Either source_url or local_video must be provided.")
         if self.local_video and not self.local_video.exists():
             raise FileNotFoundError(f"Local video not found: {self.local_video}")
+        remote_fields = [
+            self.remote_download_host,
+            self.remote_download_user,
+            self.remote_download_password,
+        ]
+        if any(remote_fields) and not self.remote_download_enabled:
+            raise ValueError(
+                "Remote download requires remote_download_host, remote_download_user, and remote_download_password."
+            )
 
+    @property
+    def remote_download_enabled(self) -> bool:
+        return bool(self.remote_download_host and self.remote_download_user and self.remote_download_password)
 
 def _env_bool(name: str) -> Optional[bool]:
     value = os.getenv(name)
@@ -118,6 +135,11 @@ def load_config(**kwargs) -> PipelineConfig:
         "tts_service_url": os.getenv("TTS_SERVICE_URL"),
         "ffmpeg_bin": os.getenv("FFMPEG_BIN"),
         "ffprobe_bin": os.getenv("FFPROBE_BIN"),
+        "remote_download_host": os.getenv("REMOTE_DOWNLOAD_HOST"),
+        "remote_download_user": os.getenv("REMOTE_DOWNLOAD_USER"),
+        "remote_download_password": os.getenv("REMOTE_DOWNLOAD_PASSWORD"),
+        "remote_download_workdir": os.getenv("REMOTE_DOWNLOAD_WORKDIR"),
+        "remote_download_yt_dlp_path": os.getenv("REMOTE_DOWNLOAD_YT_DLP_PATH"),
     }
 
     keep_temp_env = _env_bool("KEEP_TEMP")
