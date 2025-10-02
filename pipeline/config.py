@@ -28,10 +28,15 @@ class PipelineConfig:
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
     whisper_batch_size: int = 16
-    whisper_vad_method: str = "pyannote"
+    whisper_vad_method: str = "silero"
     whisper_vad_onset: float = 0.5
     whisper_vad_offset: float = 0.363
     whisper_vad_chunk_size: int = 30
+    whisper_segment_max_words: int = 20
+    whisper_segment_max_chars: int = 80
+    whisper_cache_dir: Path = Path.home() / ".cache"
+    whisper_docker_image: str = "whisperx-runner:latest"
+    whisper_docker_args: Optional[str] = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_api_key: Optional[str] = None
     tts_service_url: Optional[str] = None
@@ -103,6 +108,11 @@ def load_config(**kwargs) -> PipelineConfig:
         "whisper_device": os.getenv("WHISPER_DEVICE"),
         "whisper_compute_type": os.getenv("WHISPER_COMPUTE_TYPE"),
         "whisper_vad_method": os.getenv("WHISPER_VAD_METHOD"),
+        "whisper_segment_max_words": _env_int("WHISPER_SEGMENT_MAX_WORDS"),
+        "whisper_segment_max_chars": _env_int("WHISPER_SEGMENT_MAX_CHARS"),
+        "whisper_cache_dir": _env_path("WHISPER_CACHE_DIR"),
+        "whisper_docker_image": os.getenv("WHISPER_DOCKER_IMAGE"),
+        "whisper_docker_args": os.getenv("WHISPER_DOCKER_ARGS"),
         "deepseek_base_url": os.getenv("DEEPSEEK_BASE_URL"),
         "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY"),
         "tts_service_url": os.getenv("TTS_SERVICE_URL"),

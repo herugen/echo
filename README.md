@@ -33,17 +33,30 @@ cd echo
 pip install -r requirements.txt
 ```
 
-### 3. 准备 FFmpeg/FFprobe
+### 3. 构建 WhisperX Docker 镜像
+WhisperX 及其依赖较为复杂，已封装为独立的 Docker 镜像。首次使用前需要构建：
+
+```bash
+./build.sh
+# 或者手动执行
+docker build -t whisperx-runner:latest docker/whisperx
+```
+
+### 4. 准备 FFmpeg/FFprobe
 确保系统已安装 FFmpeg 和 FFprobe，并在 `PATH` 中可用。
 
-### 4. 配置环境变量（可选）
+### 5. 配置环境变量（可选）
 在项目根目录创建 `.env`：
 ```bash
 DEEPSEEK_API_KEY=your_api_key
 TTS_SERVICE_URL=https://your-tts-service
+# WhisperX 运行镜像与缓存目录（可选）
+WHISPER_DOCKER_IMAGE=whisperx-runner:latest
+WHISPER_CACHE_DIR=/absolute/path/to/cache
+WHISPER_DOCKER_ARGS=--gpus all  # 如果需要 GPU
 ```
 
-### 5. 运行翻译
+### 6. 运行翻译
 ```bash
 python cli.py translate --url https://example.com/video.mp4 --lang zh
 # 或使用本地文件
@@ -124,7 +137,7 @@ curl -X POST "http://localhost:8000/translate" \
 1. **接收请求**: 用户通过 HTTP API 提交视频链接
 2. **下载视频**: 使用 yt-dlp 下载视频文件
 3. **提取音频**: 使用 FFmpeg 提取音频轨道（WAV 格式，44.1kHz，立体声）
-4. **语音识别**: 使用 Fast-Whisper 进行语音转文字
+4. **语音识别**: 使用 Docker 封装的 WhisperX 进行语音转文字
 5. **文本修正**: 使用 DeepSeek 修正识别错误
 6. **文本翻译**: 使用 DeepSeek 翻译到目标语言
 7. **生成字幕**: 创建 SRT 字幕文件

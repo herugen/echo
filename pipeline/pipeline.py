@@ -13,6 +13,7 @@ from .stages import (
     probe_video_format,
     extract_audio_track,
     transcribe_audio,
+    split_transcript_segments,
     translate_segments,
     generate_source_subtitles,
     generate_translated_subtitles,
@@ -63,14 +64,18 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     stages.append({"name": "extract_audio", "path": str(audio_path)})
 
     transcript, transcript_path = transcribe_audio(audio_path, config, context)
-    metadata["artifacts"]["transcript"] = str(transcript_path)
+    metadata["artifacts"]["transcript_raw"] = str(transcript_path)
     stages.append({"name": "transcribe", "segments": len(transcript.get("segments", []))})
 
-    translated_segments, translated_path = translate_segments(transcript.get("segments", []), config, context)
+    segmented_transcript, segmented_path = split_transcript_segments(transcript, config, context)
+    metadata["artifacts"]["transcript"] = str(segmented_path)
+    stages.append({"name": "segment", "segments": len(segmented_transcript.get("segments", []))})
+
+    translated_segments, translated_path = translate_segments(segmented_transcript.get("segments", []), config, context)
     metadata["artifacts"]["translated_segments"] = str(translated_path)
     stages.append({"name": "translate", "segments": len(translated_segments)})
 
-    source_subtitle = generate_source_subtitles(transcript.get("segments", []), context)
+    source_subtitle = generate_source_subtitles(segmented_transcript.get("segments", []), context)
     metadata["artifacts"]["subtitle_source"] = str(source_subtitle)
     stages.append({"name": "subtitle_source", "path": str(source_subtitle)})
 
