@@ -114,42 +114,39 @@ def _should_break_at_word(
 
 def _finalize_chunk(
     chunk_words: List[Dict[str, object]],
-    fallback_start: float,
-    fallback_end: float,
-) -> Optional[Dict[str, object]]:
+) -> Dict[str, object]:
     if not chunk_words:
-        return None
+        raise ValueError("Cannot finalize an empty chunk; expected at least one word.")
 
     start_raw = _coerce_time(chunk_words[0].get("start"))
-    if start_raw is None or start_raw == 0.0:
-        start = float(fallback_start)
-    else:
-        start = float(start_raw)
-
     end_raw = _coerce_time(chunk_words[-1].get("end"))
-    if end_raw is None or end_raw <= start:
-        end = float(max(fallback_end, start))
-    else:
-        end = float(end_raw)
 
-    return {
-        "start": round(start, 3),
-        "end": round(end, 3),
-        "text": _words_to_text(chunk_words),
-        "probability": _average_probability(chunk_words),
-        "words": [
+    if start_raw is None or end_raw is None:
+        raise ValueError("Word timestamps must be present after normalization.")
+    if end_raw < start_raw:
+        raise ValueError("Word timestamps are not monotonically increasing.")
+
+    start = float(start_raw)
+    end = float(end_raw)
+
+    words_payload: List[Dict[str, object]] = []
+    last_end = start
+
+    for word in chunk_words:
+        word_start = _coerce_time(word.get("start"))
+        word_end = _coerce_time(word.get("end"))
+        if word_start is None or word_end is None:
+            raise ValueError("Word timestamps must be present after normalization.")
+        if word_end < word_start:
+            raise ValueError("Encountered a word with end earlier than start.")
+        if word_start < last_end:
+            raise ValueError("Word timestamps are not monotonically increasing.")
+        last_end = word_end
+
+        words_payload.append(
             {
-                "start": round(
-                    float(_coerce_time(word.get("start")) or start),
-                    3,
-                ),
-                "end": round(
-                    float(
-                        _coerce_time(word.get("end"))
-                        or max(_coerce_time(word.get("start")) or start, end)
-                    ),
-                    3,
-                ),
+                "start": round(word_start, 3),
+                "end": round(word_end, 3),
                 "word": word.get("word", ""),
                 "probability": round(float(word.get("probability")), 3)
                 if word.get("probability") is not None
@@ -159,8 +156,14 @@ def _finalize_chunk(
                     else None
                 ),
             }
-            for word in chunk_words
-        ],
+        )
+
+    return {
+        "start": round(start, 3),
+        "end": round(end, 3),
+        "text": _words_to_text(chunk_words),
+        "probability": _average_probability(chunk_words),
+        "words": words_payload,
     }
 
 
@@ -175,54 +178,26 @@ def _segment_words(
     segment_start = _coerce_time(segment.get("start"))
     segment_end = _coerce_time(segment.get("end"))
 
-    if segment_start is None or segment_start == 0.0:
-        word_start = next(
-            (
-                _coerce_time(word.get("start"))
-                for word in words
-                if _coerce_time(word.get("start")) not in (None, 0.0)
-            ),
-            None,
-        )
-        if word_start not in (None, 0.0):
-            segment_start = word_start
-
-    if segment_start is None:
-        segment_start = previous_end
-
-    if segment_end is None or (
-        segment_start is not None and segment_end <= segment_start
-    ):
-        word_end = next(
-            (
-                _coerce_time(word.get("end"))
-                for word in reversed(words)
-                if _coerce_time(word.get("end")) not in (None, 0.0)
-            ),
-            None,
-        )
-        if word_end not in (None, 0.0):
-            segment_end = max(word_end, segment_start)
-
-    if segment_end is None or segment_end < segment_start:
-        segment_end = segment_start
-
-    fallback_start = float(segment_start or 0.0)
-    fallback_end = float(segment_end or fallback_start)
+    if segment_start is None or segment_end is None:
+        raise ValueError("Segment timestamps must be present after normalization.")
+    if segment_end < segment_start:
+        raise ValueError("Segment end timestamp is earlier than start.")
+    if segment_start < previous_end:
+        raise ValueError("Segment timestamps regress compared to the previous segment.")
 
     if not words:
         text = segment.get("text", "").strip()
         if not text:
-            _segment_words._previous_end = fallback_end
+            _segment_words._previous_end = float(segment_end)
             return []
         chunk = {
-            "start": round(fallback_start, 3),
-            "end": round(fallback_end, 3),
+            "start": round(float(segment_start), 3),
+            "end": round(float(segment_end), 3),
             "text": text,
             "probability": segment.get("probability"),
             "words": [],
         }
-        _segment_words._previous_end = fallback_end
+        _segment_words._previous_end = float(segment_end)
         return [chunk]
 
     chunks: List[Dict[str, object]] = []
@@ -231,33 +206,14 @@ def _segment_words(
     for word in words:
         normalized_word = _normalize_word(word)
         if _should_break_at_word(current, normalized_word, thresholds):
-            chunk = _finalize_chunk(current, fallback_start, fallback_end)
-            if chunk:
-                chunks.append(chunk)
+            chunks.append(_finalize_chunk(current))
             current = [normalized_word]
         else:
             current.append(normalized_word)
 
-    chunk = _finalize_chunk(current, fallback_start, fallback_end)
-    if chunk:
-        chunks.append(chunk)
+    chunks.append(_finalize_chunk(current))
 
-    if len(chunks) == 1:
-        single_chunk = chunks[0]
-        rounded_start = round(fallback_start, 3)
-        rounded_end = round(fallback_end, 3)
-
-        single_chunk["start"] = rounded_start
-        single_chunk["end"] = rounded_end
-
-        for word in single_chunk.get("words", []):
-            word["start"] = rounded_start
-            word["end"] = rounded_end
-
-        _segment_words._previous_end = fallback_end
-        return chunks
-
-    _segment_words._previous_end = fallback_end
+    _segment_words._previous_end = float(segment_end)
     return chunks
 
 

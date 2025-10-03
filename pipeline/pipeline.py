@@ -14,6 +14,7 @@ from .stages import (
     probe_video_format,
     extract_audio_track,
     transcribe_audio,
+    normalize_transcript,
     split_transcript_segments,
     translate_segments,
     generate_source_subtitles,
@@ -27,6 +28,7 @@ _STAGE_SEQUENCE = [
     "probe_video",
     "extract_audio",
     "transcribe",
+    "normalize",
     "segment",
     "translate",
     "subtitle_source",
@@ -41,6 +43,7 @@ _STAGE_ARTIFACT_KEYS = {
     "probe_video": ("video_format",),
     "extract_audio": ("audio",),
     "transcribe": ("transcript_raw",),
+    "normalize": ("transcript_normalized",),
     "segment": ("transcript",),
     "translate": ("translated_segments",),
     "subtitle_source": ("subtitle_source",),
@@ -163,6 +166,9 @@ def _build_resume_plan(
                 elif stage_name == "transcribe":
                     prepared.setdefault("transcript_path", path)
                     prepared.setdefault("transcript", _load_json_file(path, stage_name))
+                elif stage_name == "normalize":
+                    prepared.setdefault("normalized_path", path)
+                    prepared.setdefault("normalized", _load_json_file(path, stage_name))
                 elif stage_name == "segment":
                     prepared.setdefault("segments_path", path)
                     prepared.setdefault("segments", _load_json_file(path, stage_name))
@@ -244,6 +250,8 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
     audio_path = _ensure_path(prepared.get("audio_path") or artifacts.get("audio"))
     transcript_path = _ensure_path(prepared.get("transcript_path") or artifacts.get("transcript_raw"))
     transcript = prepared.get("transcript")
+    normalized_path = _ensure_path(prepared.get("normalized_path") or artifacts.get("transcript_normalized"))
+    normalized_transcript = prepared.get("normalized")
     segmented_path = _ensure_path(prepared.get("segments_path") or artifacts.get("transcript"))
     segmented_transcript = prepared.get("segments")
     translated_path = _ensure_path(prepared.get("translated_path") or artifacts.get("translated_segments"))
@@ -271,6 +279,8 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
                 raise RuntimeError("Cannot resume pipeline: missing audio artifact for skipped 'extract_audio' stage.")
             if stage_name == "transcribe" and (transcript is None or transcript_path is None):
                 raise RuntimeError("Cannot resume pipeline: missing transcript artifact for skipped 'transcribe' stage.")
+            if stage_name == "normalize" and (normalized_transcript is None or normalized_path is None):
+                raise RuntimeError("Cannot resume pipeline: missing normalized transcript for skipped 'normalize' stage.")
             if stage_name == "segment" and (segmented_transcript is None or segmented_path is None):
                 raise RuntimeError("Cannot resume pipeline: missing segmented transcript for skipped 'segment' stage.")
             if stage_name == "translate" and (translated_segments is None or translated_path is None):
@@ -319,13 +329,32 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
             artifacts["transcript_raw"] = str(transcript_path)
             stages.append({"name": "transcribe", "segments": len(transcript.get("segments", []))})
 
+        elif stage_name == "normalize":
+            if transcript is None:
+                if transcript_path is None:
+                    raise RuntimeError("Normalization requires transcript data.")
+                transcript = _load_json_file(transcript_path, "transcribe")
+            if forced_stage or normalized_transcript is None:
+                normalized_transcript, normalized_path = normalize_transcript(transcript, config, context)
+            elif normalized_path is None:
+                normalized_path = prepared.get("normalized_path") or artifacts.get("transcript_normalized")
+                normalized_path = _ensure_path(normalized_path)
+            if normalized_path is None:
+                raise RuntimeError("Normalization stage could not resolve normalized transcript path.")
+            artifacts["transcript_normalized"] = str(normalized_path)
+            stages.append({"name": "normalize", "segments": len(normalized_transcript.get("segments", []))})
+
         elif stage_name == "segment":
             if transcript is None:
                 if transcript_path is None:
                     raise RuntimeError("Segmentation requires transcript data.")
                 transcript = _load_json_file(transcript_path, "transcribe")
+            if normalized_transcript is None:
+                if normalized_path is None:
+                    raise RuntimeError("Segmentation requires normalized transcript data.")
+                normalized_transcript = _load_json_file(normalized_path, "normalize")
             if forced_stage or segmented_transcript is None:
-                segmented_transcript, segmented_path = split_transcript_segments(transcript, config, context)
+                segmented_transcript, segmented_path = split_transcript_segments(normalized_transcript, config, context)
             elif segmented_path is None:
                 segmented_path = prepared.get("segments_path") or artifacts.get("transcript")
                 segmented_path = _ensure_path(segmented_path)
