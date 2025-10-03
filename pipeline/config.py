@@ -21,6 +21,7 @@ class PipelineConfig:
     local_video: Optional[Path] = None
     job_name: Optional[str] = None
     reuse_run: Optional[str] = None
+    resume_from_stage: Optional[str] = None
     workdir: Path = Path("runs")
     keep_temp: bool = False
     force_steps: Set[str] = field(default_factory=set)
@@ -42,6 +43,10 @@ class PipelineConfig:
     tts_service_url: Optional[str] = None
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
+    overlay_video_codec: str = "libx264"
+    overlay_video_crf: Optional[int] = 20
+    overlay_video_preset: Optional[str] = "medium"
+    overlay_video_bitrate: Optional[str] = None
     remote_download_host: Optional[str] = None
     remote_download_user: Optional[str] = None
     remote_download_password: Optional[str] = None
@@ -120,6 +125,7 @@ def load_config(**kwargs) -> PipelineConfig:
         "target_language": os.getenv("TARGET_LANGUAGE"),
         "job_name": os.getenv("JOB_NAME"),
         "reuse_run": os.getenv("REUSE_RUN"),
+        "resume_from_stage": os.getenv("RESUME_FROM_STAGE"),
         "workdir": _env_path("WORKDIR"),
         "whisper_model": os.getenv("WHISPER_MODEL"),
         "whisper_device": os.getenv("WHISPER_DEVICE"),
@@ -135,6 +141,10 @@ def load_config(**kwargs) -> PipelineConfig:
         "tts_service_url": os.getenv("TTS_SERVICE_URL"),
         "ffmpeg_bin": os.getenv("FFMPEG_BIN"),
         "ffprobe_bin": os.getenv("FFPROBE_BIN"),
+        "overlay_video_codec": os.getenv("OVERLAY_VIDEO_CODEC"),
+        "overlay_video_crf": _env_int("OVERLAY_VIDEO_CRF"),
+        "overlay_video_preset": os.getenv("OVERLAY_VIDEO_PRESET"),
+        "overlay_video_bitrate": os.getenv("OVERLAY_VIDEO_BITRATE"),
         "remote_download_host": os.getenv("REMOTE_DOWNLOAD_HOST"),
         "remote_download_user": os.getenv("REMOTE_DOWNLOAD_USER"),
         "remote_download_password": os.getenv("REMOTE_DOWNLOAD_PASSWORD"),

@@ -32,15 +32,25 @@ def burn_translated_subtitles(
         "-vf",
         filter_expr,
         "-c:v",
-        "h264_videotoolbox",
-        "-b:v",
-        "4000k",
+        config.overlay_video_codec,
         "-pix_fmt",
         "yuv420p",
+    ]
+
+    if not config.overlay_video_bitrate and config.overlay_video_crf is not None:
+        cmd.extend(["-crf", str(config.overlay_video_crf)])
+
+    if config.overlay_video_bitrate:
+        cmd.extend(["-b:v", config.overlay_video_bitrate])
+
+    if config.overlay_video_preset:
+        cmd.extend(["-preset", config.overlay_video_preset])
+
+    cmd.extend([
         "-c:a",
         "copy",
         str(output_path),
-    ]
+    ])
 
     run_ffmpeg(cmd)
     return output_path

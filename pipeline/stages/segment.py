@@ -41,21 +41,14 @@ class _Thresholds:
 
         return False
 
-    def min_words_for_punctuation(self) -> int:
-        if self.max_words:
-            return max(3, self.max_words // 2)
-        return 12
 
-    def min_chars_for_punctuation(self) -> int:
-        if self.max_chars:
-            return max(20, self.max_chars // 2)
-        return 60
-
-    def allow_punctuation_split(self, segment_words: int, segment_chars: int) -> bool:
-        return (
-            segment_words >= self.min_words_for_punctuation()
-            or segment_chars >= self.min_chars_for_punctuation()
-        )
+def _coerce_time(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _words_to_text(words: Iterable[Dict[str, object]]) -> str:
@@ -110,12 +103,6 @@ def _should_break_at_word(
     if not current:
         return False
 
-    if not thresholds.allow_punctuation_split(
-        segment_words=len(current),
-        segment_chars=len(_words_to_text(current)),
-    ):
-        return False
-
     if _is_major_boundary(current[-1]):
         return True
 
@@ -133,8 +120,17 @@ def _finalize_chunk(
     if not chunk_words:
         return None
 
-    start = float(chunk_words[0].get("start", fallback_start))
-    end = float(chunk_words[-1].get("end", fallback_end))
+    start_raw = _coerce_time(chunk_words[0].get("start"))
+    if start_raw is None or start_raw == 0.0:
+        start = float(fallback_start)
+    else:
+        start = float(start_raw)
+
+    end_raw = _coerce_time(chunk_words[-1].get("end"))
+    if end_raw is None or end_raw <= start:
+        end = float(max(fallback_end, start))
+    else:
+        end = float(end_raw)
 
     return {
         "start": round(start, 3),
@@ -143,8 +139,17 @@ def _finalize_chunk(
         "probability": _average_probability(chunk_words),
         "words": [
             {
-                "start": round(float(word.get("start", start)), 3),
-                "end": round(float(word.get("end", end)), 3),
+                "start": round(
+                    float(_coerce_time(word.get("start")) or start),
+                    3,
+                ),
+                "end": round(
+                    float(
+                        _coerce_time(word.get("end"))
+                        or max(_coerce_time(word.get("start")) or start, end)
+                    ),
+                    3,
+                ),
                 "word": word.get("word", ""),
                 "probability": round(float(word.get("probability")), 3)
                 if word.get("probability") is not None
@@ -164,21 +169,61 @@ def _segment_words(
     thresholds: _Thresholds,
 ) -> List[Dict[str, object]]:
     words: List[Dict[str, object]] = list(segment.get("words") or [])
+
+    previous_end = getattr(_segment_words, "_previous_end", 0.0)
+
+    segment_start = _coerce_time(segment.get("start"))
+    segment_end = _coerce_time(segment.get("end"))
+
+    if segment_start is None or segment_start == 0.0:
+        word_start = next(
+            (
+                _coerce_time(word.get("start"))
+                for word in words
+                if _coerce_time(word.get("start")) not in (None, 0.0)
+            ),
+            None,
+        )
+        if word_start not in (None, 0.0):
+            segment_start = word_start
+
+    if segment_start is None:
+        segment_start = previous_end
+
+    if segment_end is None or (
+        segment_start is not None and segment_end <= segment_start
+    ):
+        word_end = next(
+            (
+                _coerce_time(word.get("end"))
+                for word in reversed(words)
+                if _coerce_time(word.get("end")) not in (None, 0.0)
+            ),
+            None,
+        )
+        if word_end not in (None, 0.0):
+            segment_end = max(word_end, segment_start)
+
+    if segment_end is None or segment_end < segment_start:
+        segment_end = segment_start
+
+    fallback_start = float(segment_start or 0.0)
+    fallback_end = float(segment_end or fallback_start)
+
     if not words:
         text = segment.get("text", "").strip()
         if not text:
+            _segment_words._previous_end = fallback_end
             return []
-        start = float(segment.get("start", 0.0))
-        end = float(segment.get("end", start))
-        return [
-            {
-                "start": round(start, 3),
-                "end": round(end, 3),
-                "text": text,
-                "probability": segment.get("probability"),
-                "words": [],
-            }
-        ]
+        chunk = {
+            "start": round(fallback_start, 3),
+            "end": round(fallback_end, 3),
+            "text": text,
+            "probability": segment.get("probability"),
+            "words": [],
+        }
+        _segment_words._previous_end = fallback_end
+        return [chunk]
 
     chunks: List[Dict[str, object]] = []
     current: List[Dict[str, object]] = []
@@ -186,17 +231,33 @@ def _segment_words(
     for word in words:
         normalized_word = _normalize_word(word)
         if _should_break_at_word(current, normalized_word, thresholds):
-            chunk = _finalize_chunk(current, segment.get("start", 0.0), segment.get("end", 0.0))
+            chunk = _finalize_chunk(current, fallback_start, fallback_end)
             if chunk:
                 chunks.append(chunk)
             current = [normalized_word]
         else:
             current.append(normalized_word)
 
-    chunk = _finalize_chunk(current, segment.get("start", 0.0), segment.get("end", 0.0))
+    chunk = _finalize_chunk(current, fallback_start, fallback_end)
     if chunk:
         chunks.append(chunk)
 
+    if len(chunks) == 1:
+        single_chunk = chunks[0]
+        rounded_start = round(fallback_start, 3)
+        rounded_end = round(fallback_end, 3)
+
+        single_chunk["start"] = rounded_start
+        single_chunk["end"] = rounded_end
+
+        for word in single_chunk.get("words", []):
+            word["start"] = rounded_start
+            word["end"] = rounded_end
+
+        _segment_words._previous_end = fallback_end
+        return chunks
+
+    _segment_words._previous_end = fallback_end
     return chunks
 
 
