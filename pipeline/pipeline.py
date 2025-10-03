@@ -30,8 +30,8 @@ _STAGE_SEQUENCE = [
     "transcribe",
     "normalize",
     "segment",
-    "translate",
     "subtitle_source",
+    "translate",
     "subtitle_translated",
     "burn_translated_subtitles",
 ]

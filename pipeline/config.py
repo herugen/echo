@@ -33,8 +33,16 @@ class PipelineConfig:
     whisper_vad_onset: float = 0.5
     whisper_vad_offset: float = 0.363
     whisper_vad_chunk_size: int = 15
-    whisper_segment_max_words: int = 20
-    whisper_segment_max_chars: int = 80
+    subtitle_max_chars: int = 42
+    subtitle_min_duration: float = 1.0
+    subtitle_max_duration: float = 6.0
+    subtitle_max_chars_per_second: float = 17.0
+    subtitle_preferred_chars: int = 32
+    subtitle_preferred_duration: float = 3.0
+    subtitle_pause_strong: float = 0.45
+    subtitle_pause_weak: float = 0.3
+    subtitle_pause_soft: float = 0.18
+    subtitle_break_penalty: float = 0.3
     whisper_cache_dir: Path = Path.home() / ".cache"
     whisper_docker_image: str = "whisperx-runner:latest"
     whisper_docker_args: Optional[str] = None
@@ -131,8 +139,16 @@ def load_config(**kwargs) -> PipelineConfig:
         "whisper_device": os.getenv("WHISPER_DEVICE"),
         "whisper_compute_type": os.getenv("WHISPER_COMPUTE_TYPE"),
         "whisper_vad_method": os.getenv("WHISPER_VAD_METHOD"),
-        "whisper_segment_max_words": _env_int("WHISPER_SEGMENT_MAX_WORDS"),
-        "whisper_segment_max_chars": _env_int("WHISPER_SEGMENT_MAX_CHARS"),
+        "subtitle_max_chars": _env_int("SUBTITLE_MAX_CHARS"),
+        "subtitle_min_duration": _env_float("SUBTITLE_MIN_DURATION"),
+        "subtitle_max_duration": _env_float("SUBTITLE_MAX_DURATION"),
+        "subtitle_max_chars_per_second": _env_float("SUBTITLE_MAX_CHARS_PER_SECOND"),
+        "subtitle_preferred_chars": _env_int("SUBTITLE_PREFERRED_CHARS"),
+        "subtitle_preferred_duration": _env_float("SUBTITLE_PREFERRED_DURATION"),
+        "subtitle_pause_strong": _env_float("SUBTITLE_PAUSE_STRONG"),
+        "subtitle_pause_weak": _env_float("SUBTITLE_PAUSE_WEAK"),
+        "subtitle_pause_soft": _env_float("SUBTITLE_PAUSE_SOFT"),
+        "subtitle_break_penalty": _env_float("SUBTITLE_BREAK_PENALTY"),
         "whisper_cache_dir": _env_path("WHISPER_CACHE_DIR"),
         "whisper_docker_image": os.getenv("WHISPER_DOCKER_IMAGE"),
         "whisper_docker_args": os.getenv("WHISPER_DOCKER_ARGS"),
