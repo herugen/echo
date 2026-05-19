@@ -1,0 +1,14 @@
+[project]
+name = "echo-engine"
+version = "0.1.0"
+description = "Local video processing core for Echo desktop"
+requires-python = ">=3.10"
+dependencies = [
+  "whisperx>=3.8.5",
+  "yt-dlp>=2025.9.26",
+  "imageio-ffmpeg>=0.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

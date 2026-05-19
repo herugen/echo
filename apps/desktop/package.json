@@ -1,0 +1,33 @@
+{
+  "name": "echo-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "prepare:engine": "node ../../scripts/prepare-engine-resource.mjs",
+    "prepare:engine:venv": "node ../../scripts/build-engine-runtime.mjs",
+    "tauri": "node ../../scripts/tauri-with-engine.mjs",
+    "package:mac": "npm run tauri build -- --bundles dmg",
+    "package:win": "npm run tauri build -- --bundles msi,nsis",
+    "prepare:engine:runtime": "node ../../scripts/build-engine-runtime.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-opener": "^2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  },
+  "packageManager": "pnpm@11.1.2+sha512.415a1cc25974731e75455c1468371be74c5aa5fb7621b50d4056d222451609f11412f23fd602e6169f1e060466641f798597e1be961a10688836a67b16569499"
+}

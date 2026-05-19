@@ -1,64 +1,37 @@
-# 环境变量文件
+# Environment
 .env
-.env.local
-.env.production
+.env.*
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+.pytest_cache/
+packages/engine/.venv/
 
-# 虚拟环境
-venv/
-env/
-ENV/
-env.bak/
-venv.bak/
+# Node / frontend
+node_modules/
+dist/
 
-# IDE
+# Rust
+apps/desktop/src-tauri/target/
+
+# IDE / OS
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
+.DS_Store
+Thumbs.db
 
-# 数据文件
-data/
+# Local generated media / test artifacts
 *.mp4
 *.wav
 *.mp3
 *.srt
+tmp-demo/
+tmp-output/
 
-# 日志文件
-*.log
-logs/
+# Tauri bundle resources
+apps/desktop/bundle-resources/
 
-# 临时文件
-temp/
-tmp/
-*.tmp
-
-# Docker
-.dockerignore
-
-# 系统文件
-.DS_Store
-Thumbs.db
+# Build cache
+.cache/

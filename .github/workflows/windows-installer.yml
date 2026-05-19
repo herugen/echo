@@ -1,0 +1,61 @@
+name: Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    defaults:
+      run:
+        working-directory: apps/desktop
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build outputs
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Cache Python standalone runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/python-build-standalone
+          key: python-build-standalone-${{ runner.os }}-20260510-3.10.20
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Windows installers
+        run: npm run package:win
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: echo-windows-installers
+          if-no-files-found: error
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
