@@ -69,7 +69,7 @@ apps/desktop/src-tauri/target/release/bundle/dmg/
 
 ## Windows 11 build
 
-Build on Windows 11:
+Build the MSI installer on Windows 11:
 
 ```powershell
 cd apps\desktop
@@ -79,7 +79,7 @@ npm run package:win
 Output is under:
 
 ```text
-apps\desktop\src-tauri\target\release\bundle\
+apps\desktop\src-tauri\target\release\bundle\msi\
 ```
 
 ## GitHub Actions Windows build
@@ -94,7 +94,9 @@ npm ci
 npm run package:win
 ```
 
-and uploads the `.msi` and NSIS `.exe` files as a workflow artifact named `echo-windows-installers`.
+and uploads the `.msi` file as a workflow artifact named `echo-windows-msi`.
+
+The app bundle includes a self-contained Python runtime and Python packages, which makes the installer large. CI intentionally builds MSI only; NSIS has failed on GitHub-hosted Windows runners while memory-mapping the large installer data block.
 
 ## Notes
 

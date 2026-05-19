@@ -11,7 +11,7 @@
     "prepare:engine:venv": "node ../../scripts/build-engine-runtime.mjs",
     "tauri": "node ../../scripts/tauri-with-engine.mjs",
     "package:mac": "npm run tauri build -- --bundles dmg",
-    "package:win": "npm run tauri build -- --bundles msi,nsis",
+    "package:win": "npm run tauri build -- --bundles msi",
     "prepare:engine:runtime": "node ../../scripts/build-engine-runtime.mjs"
   },
   "dependencies": {
