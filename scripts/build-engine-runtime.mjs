@@ -11,6 +11,14 @@ const cache = path.join(root, '.cache', 'python-build-standalone');
 
 const PBS_RELEASE = process.env.ECHO_PYTHON_STANDALONE_RELEASE || '20260510';
 const PYTHON_VERSION = process.env.ECHO_PYTHON_STANDALONE_VERSION || '3.10.20';
+const WINDOWS_CUDA_ENABLED = process.platform === 'win32' && process.env.ECHO_WINDOWS_CUDA !== '0';
+const PYTORCH_CUDA_INDEX = process.env.ECHO_PYTORCH_CUDA_INDEX || 'https://download.pytorch.org/whl/cu128';
+const WINDOWS_CUDA_PACKAGES = [
+  'nvidia-cuda-runtime-cu12==12.8.90',
+  'nvidia-cuda-nvrtc-cu12==12.8.93',
+  'nvidia-cublas-cu12==12.8.4.1',
+  'nvidia-cudnn-cu12==8.9.7.29',
+];
 
 function run(command, args, options = {}) {
   console.log(`$ ${[command, ...args].join(' ')}`);
@@ -74,6 +82,11 @@ run('tar', ['-xzf', archive, '-C', target]);
 const python = findPythonExecutable(target);
 run(python, ['-m', 'ensurepip', '--upgrade']);
 run(python, ['-m', 'pip', 'install', '-U', 'pip']);
+if (WINDOWS_CUDA_ENABLED) {
+  run(python, ['-m', 'pip', 'install', '-U', 'torch', '--index-url', PYTORCH_CUDA_INDEX]);
+  run(python, ['-m', 'pip', 'install', ...WINDOWS_CUDA_PACKAGES]);
+  run(python, ['-c', 'import torch; print(f"PyTorch {torch.__version__} CUDA {torch.version.cuda}"); assert torch.version.cuda, "Expected CUDA-enabled PyTorch"']);
+}
 run(python, ['-m', 'pip', 'install', engine]);
 
 const binDir = path.join(engine, 'bin');
@@ -83,4 +96,5 @@ if (existsSync(binDir)) {
 
 console.log(`Prepared self-contained engine runtime at ${target}`);
 console.log(`Python runtime: ${python}`);
+console.log(`Windows CUDA runtime: ${WINDOWS_CUDA_ENABLED ? `enabled (${PYTORCH_CUDA_INDEX})` : 'disabled'}`);
 console.log('End users do not need Python installed; only WhisperX model downloads may happen at runtime.');

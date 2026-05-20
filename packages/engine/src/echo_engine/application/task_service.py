@@ -38,6 +38,16 @@ def _output_stem(task: Task, source_video: Path) -> str:
     return source_video.stem or "asset"
 
 
+def _asr_runtime_detail(runtime: dict) -> str:
+    device = runtime.get("device") or "unknown"
+    compute_type = runtime.get("compute_type") or "unknown"
+    device_name = runtime.get("cuda_device_name")
+    suffix = f" on {device_name}" if device == "cuda" and device_name else ""
+    if runtime.get("fallback_reason"):
+        return f"Audio transcribed with CPU/int8 after CUDA fallback: {runtime['fallback_reason']}"
+    return f"Audio transcribed with {device}/{compute_type}{suffix}"
+
+
 def _default_stages() -> list[StageRecord]:
     return [
         StageRecord("acquire_input"),
@@ -313,11 +323,14 @@ def run_video_task(
                 adapter = WhisperXAdapter(
                     model_name=task.config.asr_model,
                 )
-                task.metadata["asr_runtime"] = adapter.runtime_info()
+                asr_runtime = adapter.runtime_info()
+                task.metadata["asr_runtime"] = asr_runtime
                 task.stages[3].detail = (
                     f"Preparing WhisperX model {task.config.asr_model} "
-                    f"on {task.metadata['asr_runtime']['device']}"
+                    f"on {asr_runtime['device']}/{asr_runtime['compute_type']}"
                 )
+                if asr_runtime.get("cuda_device_name"):
+                    task.stages[3].detail += f" ({asr_runtime['cuda_device_name']})"
                 write_manifest(task)
                 if repository:
                     repository.save(task)
@@ -334,7 +347,7 @@ def run_video_task(
                 "segment_count": len(transcript.segments),
             }
             task.stages[3].status = StageStatus.SUCCEEDED
-            task.stages[3].detail = "Audio transcribed"
+            task.stages[3].detail = _asr_runtime_detail(task.metadata.get("asr_runtime", {}))
     except Exception as error:
         return _fail_task(task, 3, error, repository, on_update)
     task.stages[3].artifacts = [str(transcript_path)]

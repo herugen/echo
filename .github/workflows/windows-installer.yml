@@ -14,7 +14,7 @@ jobs:
   build:
     name: Build Windows installer
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
 
     defaults:
       run:
@@ -44,6 +44,14 @@ jobs:
         with:
           path: .cache/python-build-standalone
           key: python-build-standalone-${{ runner.os }}-20260510-3.10.20
+
+      - name: Cache Python wheels
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-wheels-${{ runner.os }}-${{ hashFiles('packages/engine/pyproject.toml', 'scripts/build-engine-runtime.mjs') }}
+          restore-keys: |
+            pip-wheels-${{ runner.os }}-
 
       - name: Install frontend dependencies
         run: npm ci

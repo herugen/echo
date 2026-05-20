@@ -101,5 +101,5 @@ The app bundle includes a self-contained Python runtime and Python packages, whi
 ## Notes
 
 - macOS and Windows installers should be built on their respective OSes because the bundled runtime and Python wheels are platform-specific.
-- CUDA support is detected at runtime by WhisperX/PyTorch. If CUDA is unavailable or fails, the engine falls back to CPU.
+- Windows installers include the PyTorch CUDA 12.8 wheel plus bundled CUDA/cuBLAS/cuDNN runtime DLL packages for NVIDIA RTX 50-series GPUs such as RTX 5070 Ti. CUDA is still detected at runtime; if the driver or CUDA load fails, the engine records the fallback reason and uses CPU.
 - The installer should include Python packages and yt-dlp. WhisperX model files remain runtime cache artifacts and may download on first use.
