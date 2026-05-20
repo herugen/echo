@@ -5,6 +5,11 @@ import sys
 from pathlib import Path
 import shutil
 
+from echo_engine.adapters.media import ensure_ffmpeg_cli_on_path, probe_media
+
+
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov"}
+
 
 def _subprocess_no_window_kwargs() -> dict[str, int]:
     if sys.platform == "win32":
@@ -25,6 +30,7 @@ class YtDlpDownloader(DownloaderAdapter):
         target_dir.mkdir(parents=True, exist_ok=True)
         before = {path.resolve() for path in target_dir.glob("*") if path.is_file()}
         output_template = str(target_dir / "%(title).180B-%(id)s.%(ext)s")
+        ensure_ffmpeg_cli_on_path()
         command = self._command(output_template, url)
         completed = subprocess.run(
             command,
@@ -40,17 +46,22 @@ class YtDlpDownloader(DownloaderAdapter):
         candidates = [
             path
             for path in target_dir.glob("*")
-            if path.is_file() and path.resolve() not in before and path.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}
+            if path.is_file() and path.resolve() not in before and path.suffix.lower() in VIDEO_EXTENSIONS
         ]
         if not candidates:
             candidates = [
                 path
                 for path in target_dir.glob("*")
-                if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}
+                if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
             ]
-        if not candidates:
-            raise RuntimeError("yt-dlp completed but no video file was found")
-        return max(candidates, key=lambda path: path.stat().st_mtime)
+        video_candidates = [path for path in candidates if self._has_video_stream(path)]
+        if not video_candidates:
+            raise RuntimeError("yt-dlp completed but no downloaded video stream was found")
+        return max(video_candidates, key=lambda path: path.stat().st_mtime)
+
+    def _has_video_stream(self, path: Path) -> bool:
+        media_info = probe_media(path)
+        return any(stream.get("codec_type") == "video" for stream in media_info.get("streams", []))
 
     def _command(self, output_template: str, url: str) -> list[str]:
         args = [
