@@ -43,6 +43,12 @@ def _ffprobe_executable() -> str | None:
     return shutil.which("ffprobe")
 
 
+def _subprocess_no_window_kwargs() -> dict[str, int]:
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 def probe_media(source: Path) -> dict:
     ffprobe = _ffprobe_executable()
     if ffprobe:
@@ -60,6 +66,7 @@ def probe_media(source: Path) -> dict:
             check=True,
             capture_output=True,
             text=True,
+            **_subprocess_no_window_kwargs(),
         )
         return json.loads(result.stdout)
     return _probe_media_with_av(source)
@@ -111,5 +118,6 @@ def extract_audio(source: Path, target: Path) -> Path:
         check=True,
         capture_output=True,
         text=True,
+        **_subprocess_no_window_kwargs(),
     )
     return target

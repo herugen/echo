@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     env,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -64,6 +64,22 @@ struct EnginePaths {
     src_dir: PathBuf,
     python: PathBuf,
     path_env: OsString,
+}
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(windows)]
+fn hidden_command(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+#[cfg(not(windows))]
+fn hidden_command(program: impl AsRef<OsStr>) -> Command {
+    Command::new(program)
 }
 
 fn app_data_dir() -> Result<PathBuf, String> {
@@ -280,7 +296,7 @@ fn create_local_video_task(app: AppHandle, source_path: String) -> Result<TaskSu
         )
     })?;
     let db_path = task_db_path()?;
-    let output = Command::new(&paths.python)
+    let output = hidden_command(&paths.python)
         .arg("-m")
         .arg("echo_engine.create_task_runner")
         .arg(&source_path)
@@ -324,7 +340,7 @@ fn create_url_video_task(app: AppHandle, url: String) -> Result<TaskSummary, Str
         )
     })?;
     let db_path = task_db_path()?;
-    let output = Command::new(&paths.python)
+    let output = hidden_command(&paths.python)
         .arg("-m")
         .arg("echo_engine.create_url_task_runner")
         .arg(&url)
@@ -368,7 +384,7 @@ fn start_task(
     let app_for_thread = app.clone();
     let running_tasks = state.running_tasks.clone();
     thread::spawn(move || {
-        let mut child = match Command::new(&paths.python)
+        let mut child = match hidden_command(&paths.python)
             .arg("-m")
             .arg("echo_engine.run_task_runner")
             .arg(&task_id)
@@ -435,7 +451,7 @@ fn retry_task(app: AppHandle, task_id: String) -> Result<(), String> {
     let paths = engine_paths(&app)?;
     let db_path = task_db_path()?;
     thread::spawn(move || {
-        let mut child = match Command::new(&paths.python)
+        let mut child = match hidden_command(&paths.python)
             .arg("-m")
             .arg("echo_engine.retry_task_runner")
             .arg(&task_id)
@@ -505,7 +521,7 @@ fn pause_task(
 
     let paths = engine_paths(&app)?;
     let db_path = task_db_path()?;
-    let output = Command::new(&paths.python)
+    let output = hidden_command(&paths.python)
         .arg("-m")
         .arg("echo_engine.pause_task_runner")
         .arg(&task_id)
@@ -540,7 +556,7 @@ fn delete_task(
     }
     let paths = engine_paths(&app)?;
     let db_path = task_db_path()?;
-    let output = Command::new(&paths.python)
+    let output = hidden_command(&paths.python)
         .arg("-m")
         .arg("echo_engine.delete_task_runner")
         .arg(&task_id)
@@ -559,7 +575,7 @@ fn delete_task(
 
 fn kill_process(pid: u32) -> Result<(), String> {
     #[cfg(windows)]
-    let status = Command::new("taskkill")
+    let status = hidden_command("taskkill")
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status();
     #[cfg(not(windows))]
@@ -599,11 +615,11 @@ fn open_path(target_path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let status = if path.is_file() {
-            Command::new("explorer")
+            hidden_command("explorer")
                 .arg(format!("/select,{}", path.display()))
                 .status()
         } else {
-            Command::new("explorer").arg(&path).status()
+            hidden_command("explorer").arg(&path).status()
         }
         .map_err(|error| format!("Failed to open Explorer: {error}"))?;
         if status.success() {
@@ -637,7 +653,7 @@ fn open_path(target_path: String) -> Result<(), String> {
 fn list_tasks(app: AppHandle) -> Result<Vec<TaskSummary>, String> {
     let paths = engine_paths(&app)?;
     let db_path = task_db_path()?;
-    let output = Command::new(&paths.python)
+    let output = hidden_command(&paths.python)
         .arg("-m")
         .arg("echo_engine.history_runner")
         .arg("--db-path")

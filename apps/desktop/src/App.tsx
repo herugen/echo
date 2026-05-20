@@ -61,13 +61,6 @@ function isTextField(target: EventTarget | null): target is HTMLInputElement | H
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
 
-function replaceSelectedText(target: HTMLInputElement | HTMLTextAreaElement, text: string) {
-  const start = target.selectionStart ?? target.value.length;
-  const end = target.selectionEnd ?? target.value.length;
-  target.setRangeText(text, start, end, "end");
-  target.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
 function App() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -90,49 +83,18 @@ function App() {
       if ((!event.ctrlKey && !event.metaKey) || event.altKey) {
         return;
       }
-      const key = event.key.toLowerCase();
-      if (!["a", "c", "v", "x"].includes(key)) {
+      if (isTextField(event.target)) {
         return;
       }
 
-      const target = event.target;
-      if (isTextField(target)) {
-        const start = target.selectionStart ?? 0;
-        const end = target.selectionEnd ?? 0;
-        const selectedText = target.value.slice(start, end);
-
-        if (key === "a") {
-          event.preventDefault();
-          target.select();
-          return;
-        }
-        if (key === "c" && selectedText) {
-          event.preventDefault();
-          await navigator.clipboard?.writeText(selectedText);
-          return;
-        }
-        if (key === "x" && selectedText && !target.readOnly && !target.disabled) {
-          event.preventDefault();
-          await navigator.clipboard?.writeText(selectedText);
-          replaceSelectedText(target, "");
-          return;
-        }
-        if (key === "v" && !target.readOnly && !target.disabled) {
-          const text = await navigator.clipboard?.readText();
-          if (text !== undefined) {
-            event.preventDefault();
-            replaceSelectedText(target, text);
-          }
-        }
+      if (event.key.toLowerCase() !== "c") {
         return;
       }
 
-      if (key === "c") {
-        const selectedText = window.getSelection()?.toString();
-        if (selectedText) {
-          event.preventDefault();
-          await navigator.clipboard?.writeText(selectedText);
-        }
+      const selectedText = window.getSelection()?.toString();
+      if (selectedText) {
+        event.preventDefault();
+        await navigator.clipboard?.writeText(selectedText);
       }
     };
 

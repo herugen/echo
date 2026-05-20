@@ -6,6 +6,12 @@ from pathlib import Path
 import shutil
 
 
+def _subprocess_no_window_kwargs() -> dict[str, int]:
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 class DownloaderAdapter:
     def download(self, url: str, target_dir: Path) -> Path:
         raise NotImplementedError
@@ -20,7 +26,13 @@ class YtDlpDownloader(DownloaderAdapter):
         before = {path.resolve() for path in target_dir.glob("*") if path.is_file()}
         output_template = str(target_dir / "%(title).180B-%(id)s.%(ext)s")
         command = self._command(output_template, url)
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            **_subprocess_no_window_kwargs(),
+        )
         if completed.returncode != 0:
             message = completed.stderr.strip() or completed.stdout.strip() or "yt-dlp failed"
             raise RuntimeError(message)
