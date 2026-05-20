@@ -80,14 +80,14 @@ if (!existsSync(archive)) {
 
 run('tar', ['-xzf', archive, '-C', target]);
 const python = findPythonExecutable(target);
-run(python, ['-m', 'ensurepip', '--upgrade']);
-run(python, ['-m', 'pip', 'install', '-U', 'pip']);
+run(python, ['-m', 'ensurepip', '--upgrade'], { shell: false });
+run(python, ['-m', 'pip', 'install', '-U', 'pip'], { shell: false });
 if (WINDOWS_CUDA_ENABLED) {
-  run(python, ['-m', 'pip', 'install', '-U', 'torch', '--index-url', PYTORCH_CUDA_INDEX]);
-  run(python, ['-m', 'pip', 'install', ...WINDOWS_CUDA_PACKAGES]);
-  run(python, ['-c', 'import torch; print(f"PyTorch {torch.__version__} CUDA {torch.version.cuda}"); assert torch.version.cuda, "Expected CUDA-enabled PyTorch"']);
+  run(python, ['-m', 'pip', 'install', '-U', 'torch', '--index-url', PYTORCH_CUDA_INDEX], { shell: false });
+  run(python, ['-m', 'pip', 'install', ...WINDOWS_CUDA_PACKAGES], { shell: false });
+  run(python, ['-c', 'import torch; print(f"PyTorch {torch.__version__} CUDA {torch.version.cuda}"); assert torch.version.cuda, "Expected CUDA-enabled PyTorch"'], { shell: false });
 }
-run(python, ['-m', 'pip', 'install', engine]);
+run(python, ['-m', 'pip', 'install', engine], { shell: false });
 
 const binDir = path.join(engine, 'bin');
 if (existsSync(binDir)) {
