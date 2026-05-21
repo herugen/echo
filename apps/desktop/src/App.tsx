@@ -106,6 +106,7 @@ function App() {
   useEffect(() => {
     Promise.all([backend.getSettings(), backend.listTasks()])
       .then(([nextSettings, nextTasks]) => {
+        setError(null);
         setSettings(nextSettings);
         setTasks(nextTasks);
         setSelectedTaskId(null);
