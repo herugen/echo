@@ -25,3 +25,12 @@ export interface TaskSummary {
   progress: number;
   stages?: StageSummary[];
 }
+
+export interface SubtitleCue {
+  id: string;
+  index: number;
+  start: number;
+  end: number;
+  source: string;
+  translation?: string;
+}

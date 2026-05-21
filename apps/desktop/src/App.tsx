@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
-import { backend } from "./lib/backend";
+import { StudySession } from "./StudySession";
+import { backend, isTauriRuntime } from "./lib/backend";
 import type { AppSettings, TaskSummary } from "./types";
 
 const stageLabels: Record<string, string> = {
@@ -50,7 +51,7 @@ function failedDetail(task: TaskSummary): string {
 }
 
 function outputArtifacts(task: TaskSummary): string[] {
-  return task.stages?.flatMap((stage) => stage.artifacts ?? []) ?? [];
+  return task.stages?.find((stage) => stage.name === "finalize_video")?.artifacts ?? [];
 }
 
 function exportTarget(task: TaskSummary): string {
@@ -109,7 +110,14 @@ function App() {
         setTasks(nextTasks);
         setSelectedTaskId(null);
       })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : "初始化失败"));
+      .catch((cause) => {
+        const message = cause instanceof Error ? cause.message : String(cause || "初始化失败");
+        setError(message);
+      });
+
+    if (!isTauriRuntime) {
+      return;
+    }
 
     const unlistenUpdates = listen<TaskSummary>("task_updated", (event) => {
       mergeTask(event.payload);
@@ -362,6 +370,9 @@ function App() {
                     <button className="mini-button" onClick={(event) => { event.stopPropagation(); void handlePauseTask(task.id); }}>暂停</button>
                   ) : null}
                   {isDone ? (
+                    <button className="mini-button" onClick={(event) => { event.stopPropagation(); setSelectedTaskId(task.id); }}>学习</button>
+                  ) : null}
+                  {isDone ? (
                     <button className="mini-button" onClick={(event) => { event.stopPropagation(); void handleOpenPath(exportTarget(task)); }}>导出结果</button>
                   ) : null}
                   {isFailed ? (
@@ -379,72 +390,84 @@ function App() {
 
       {selectedTask ? (
         <div className="modal-backdrop" onMouseDown={() => setSelectedTaskId(null)}>
-          <section className="settings-modal task-detail-modal" role="dialog" aria-modal="true" aria-label="任务详情" onMouseDown={(event) => event.stopPropagation()}>
+          <section
+            className={`settings-modal ${selectedTask.status === "succeeded" ? "study-modal" : "task-detail-modal"}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={selectedTask.status === "succeeded" ? "学习视图" : "任务详情"}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <div className="modal-header">
               <div>
-                <p className="eyebrow">Task Detail</p>
+                <p className="eyebrow">{selectedTask.status === "succeeded" ? "Study Session" : "Task Detail"}</p>
                 <h2>{selectedTask.title}</h2>
               </div>
               <button className="icon-button" onClick={() => setSelectedTaskId(null)} aria-label="关闭任务详情">
                 ×
               </button>
             </div>
-            <div className="task-detail">
-              <div className="path-card">
-                <span>{labelStatus(selectedTask.status)}</span>
-                <code>{selectedTask.outputDir}</code>
-                <div className="path-actions">
-                  {selectedTask.status === "draft" || selectedTask.status === "paused" ? (
-                    <button className="mini-button" onClick={() => void handleStartTask(selectedTask.id)}>开始处理</button>
-                  ) : null}
-                  {selectedTask.status === "running" ? (
-                    <button className="mini-button" onClick={() => void handlePauseTask(selectedTask.id)}>暂停</button>
-                  ) : null}
-                  {selectedTask.status === "failed" ? (
-                    <button className="mini-button" onClick={() => void handleRetry(selectedTask.id)}>重试</button>
-                  ) : null}
-                  {selectedTask.status === "draft" || selectedTask.status === "paused" || selectedTask.status === "failed" ? (
-                    <button className="mini-button danger" onClick={() => void handleDeleteTask(selectedTask.id)}>删除任务</button>
-                  ) : null}
-                  {selectedTask.status === "succeeded" ? (
-                    <button className="mini-button" onClick={() => void handleOpenPath(exportTarget(selectedTask))}>导出结果</button>
-                  ) : null}
-                  <button className="mini-button" onClick={() => void handleOpenPath(selectedTask.outputDir ?? selectedTask.assetDir)}>打开输出位置</button>
-                  <button className="mini-button" onClick={() => void handleCopyPath(selectedTask.outputDir ?? selectedTask.assetDir)}>
-                    {copiedPath === (selectedTask.outputDir ?? selectedTask.assetDir) ? "已复制" : "复制路径"}
-                  </button>
+            {selectedTask.status === "succeeded" ? (
+              <StudySession
+                task={selectedTask}
+                copiedPath={copiedPath}
+                onOpenPath={(path) => void handleOpenPath(path)}
+                onCopyPath={(path) => void handleCopyPath(path)}
+              />
+            ) : (
+              <div className="task-detail">
+                <div className="path-card">
+                  <span>{labelStatus(selectedTask.status)}</span>
+                  <code>{selectedTask.outputDir}</code>
+                  <div className="path-actions">
+                    {selectedTask.status === "draft" || selectedTask.status === "paused" ? (
+                      <button className="mini-button" onClick={() => void handleStartTask(selectedTask.id)}>开始处理</button>
+                    ) : null}
+                    {selectedTask.status === "running" ? (
+                      <button className="mini-button" onClick={() => void handlePauseTask(selectedTask.id)}>暂停</button>
+                    ) : null}
+                    {selectedTask.status === "failed" ? (
+                      <button className="mini-button" onClick={() => void handleRetry(selectedTask.id)}>重试</button>
+                    ) : null}
+                    {selectedTask.status === "draft" || selectedTask.status === "paused" || selectedTask.status === "failed" ? (
+                      <button className="mini-button danger" onClick={() => void handleDeleteTask(selectedTask.id)}>删除任务</button>
+                    ) : null}
+                    <button className="mini-button" onClick={() => void handleOpenPath(selectedTask.outputDir ?? selectedTask.assetDir)}>打开输出位置</button>
+                    <button className="mini-button" onClick={() => void handleCopyPath(selectedTask.outputDir ?? selectedTask.assetDir)}>
+                      {copiedPath === (selectedTask.outputDir ?? selectedTask.assetDir) ? "已复制" : "复制路径"}
+                    </button>
+                  </div>
+                </div>
+                <div className="progress-track detail-progress" aria-label="详情进度">
+                  <div style={{ width: `${Math.round((selectedTask.progress ?? 0) * 100)}%` }} />
+                </div>
+                <div className="stage-log">
+                  {selectedTask.stages?.map((stage) => (
+                    <div className={`stage-log-row ${stage.status}`} key={stage.name}>
+                      <div className="stage-log-head">
+                        <strong>{labelStage(stage.name)}</strong>
+                        <span>{labelStatus(stage.status)}</span>
+                      </div>
+                      {stage.detail ? <p>{stage.detail}</p> : null}
+                      {stage.artifacts?.length ? (
+                        <ul>
+                          {stage.artifacts.map((artifact) => (
+                            <li key={artifact}>
+                              <code>{artifact}</code>
+                              <div className="artifact-actions">
+                                <button className="text-button" onClick={() => void handleOpenPath(artifact)}>打开</button>
+                                <button className="text-button" onClick={() => void handleCopyPath(artifact)}>
+                                  {copiedPath === artifact ? "已复制" : "复制"}
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="progress-track detail-progress" aria-label="详情进度">
-                <div style={{ width: `${Math.round((selectedTask.progress ?? 0) * 100)}%` }} />
-              </div>
-              <div className="stage-log">
-                {selectedTask.stages?.map((stage) => (
-                  <div className={`stage-log-row ${stage.status}`} key={stage.name}>
-                    <div className="stage-log-head">
-                      <strong>{labelStage(stage.name)}</strong>
-                      <span>{labelStatus(stage.status)}</span>
-                    </div>
-                    {stage.detail ? <p>{stage.detail}</p> : null}
-                    {stage.artifacts?.length ? (
-                      <ul>
-                        {stage.artifacts.map((artifact) => (
-                          <li key={artifact}>
-                            <code>{artifact}</code>
-                            <div className="artifact-actions">
-                              <button className="text-button" onClick={() => void handleOpenPath(artifact)}>打开</button>
-                              <button className="text-button" onClick={() => void handleCopyPath(artifact)}>
-                                {copiedPath === artifact ? "已复制" : "复制"}
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
           </section>
         </div>
       ) : null}

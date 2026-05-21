@@ -55,6 +55,7 @@ fn repo_root() -> Result<PathBuf, String> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
+        .and_then(Path::parent)
         .map(Path::to_path_buf)
         .ok_or_else(|| "Could not resolve repository root".to_string())
 }
@@ -650,6 +651,32 @@ fn open_path(target_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    let extension = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !matches!(extension.as_str(), "srt" | "vtt" | "txt") {
+        return Err(format!("Unsupported text file type: {}", path.display()));
+    }
+
+    let metadata = std::fs::metadata(&path)
+        .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
+    if metadata.len() > 25 * 1024 * 1024 {
+        return Err(format!("Text file is too large: {}", path.display()));
+    }
+
+    std::fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read {}: {error}", path.display()))
+}
+
+#[tauri::command]
 fn list_tasks(app: AppHandle) -> Result<Vec<TaskSummary>, String> {
     let paths = engine_paths(&app)?;
     let db_path = task_db_path()?;
@@ -722,21 +749,15 @@ fn task_summary_from_payload(payload: Value) -> TaskSummary {
                         name: stage["name"].as_str().unwrap_or_default().to_string(),
                         status: stage["status"].as_str().unwrap_or_default().to_string(),
                         detail: stage["detail"].as_str().map(str::to_string),
-                        artifacts: if stage["name"].as_str() == Some("finalize_video") {
-                            stage["artifacts"]
-                                .as_array()
-                                .map(|artifacts| {
-                                    artifacts
-                                        .iter()
-                                        .filter_map(|artifact| {
-                                            artifact.as_str().map(str::to_string)
-                                        })
-                                        .collect()
-                                })
-                                .unwrap_or_default()
-                        } else {
-                            Vec::new()
-                        },
+                        artifacts: stage["artifacts"]
+                            .as_array()
+                            .map(|artifacts| {
+                                artifacts
+                                    .iter()
+                                    .filter_map(|artifact| artifact.as_str().map(str::to_string))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                     })
                     .collect()
             })
@@ -803,6 +824,7 @@ pub fn run() {
             pause_task,
             delete_task,
             open_path,
+            read_text_file,
             list_tasks
         ])
         .run(tauri::generate_context!())
