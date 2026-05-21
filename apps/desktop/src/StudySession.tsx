@@ -5,7 +5,17 @@ import { backend } from "./lib/backend";
 import { formatClock, mergeSubtitleTracks, srtToWebVtt } from "./lib/subtitles";
 import type { SubtitleCue, TaskSummary } from "./types";
 
-type IconName = "previous" | "next" | "play" | "pause" | "replay" | "loop" | "fullscreen" | "fullscreenExit";
+type IconName =
+  | "previous"
+  | "next"
+  | "play"
+  | "pause"
+  | "replay"
+  | "loop"
+  | "captions"
+  | "settings"
+  | "fullscreen"
+  | "fullscreenExit";
 type CaptionTrackId = "off" | "source" | "translated" | "bilingual";
 type CaptionFileTrackId = Exclude<CaptionTrackId, "off">;
 
@@ -70,6 +80,21 @@ function ControlIcon({ name }: { name: IconName }) {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M7 7h8a4 4 0 0 1 4 4v1M17 5l2 2-2 2M17 17H9a4 4 0 0 1-4-4v-1M7 19l-2-2 2-2" />
+      </svg>
+    );
+  }
+  if (name === "captions") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 6h16v12H4zM8 11h3M13 11h3M8 15h8" />
+      </svg>
+    );
+  }
+  if (name === "settings") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05a2.05 2.05 0 1 1-2.9 2.9l-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6v.14a2.05 2.05 0 1 1-4.1 0V20a1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.05.05a2.05 2.05 0 1 1-2.9-2.9l.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1H3.86a2.05 2.05 0 1 1 0-4.1H4a1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.05-.05a2.05 2.05 0 1 1 2.9-2.9l.05.05A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6v-.14a2.05 2.05 0 1 1 4.1 0V4a1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.05-.05a2.05 2.05 0 1 1 2.9 2.9l-.05.05A1.7 1.7 0 0 0 19.4 9c.2.36.4.68.6 1h.14a2.05 2.05 0 1 1 0 4.1H20a1.7 1.7 0 0 0-.6.9Z" />
       </svg>
     );
   }
@@ -235,6 +260,7 @@ export function StudySession({ task }: StudySessionProps) {
   const [loopCue, setLoopCue] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenMode, setFullscreenMode] = useState<"dom" | "window" | null>(null);
   const [selectedCaptionId, setSelectedCaptionId] = useState<CaptionTrackId>("off");
@@ -249,6 +275,7 @@ export function StudySession({ task }: StudySessionProps) {
     setDuration(0);
     setPaused(true);
     setControlsVisible(true);
+    setSettingsOpen(false);
     setSelectedCaptionId("off");
     subtitleRefs.current = {};
 
@@ -283,6 +310,8 @@ export function StudySession({ task }: StudySessionProps) {
   const activeCue = activeCueIndex >= 0 ? cues[activeCueIndex] : null;
   const timelineEnd = Math.max(duration || 0, cues[cues.length - 1]?.end || 0, 1);
   const progressPercent = Math.max(0, Math.min(100, (Math.min(currentTime, timelineEnd) / timelineEnd) * 100));
+  const selectedCaptionLabel =
+    selectedCaptionId === "off" ? "字幕关闭" : captionTracks.find((track) => track.id === selectedCaptionId)?.label ?? "字幕";
 
   useEffect(() => {
     const nextUrls: Partial<Record<CaptionFileTrackId, string>> = {};
@@ -330,7 +359,13 @@ export function StudySession({ task }: StudySessionProps) {
         window.clearTimeout(hideControlsTimer.current);
       }
     };
-  }, [paused, videoError, data?.videoUrl]);
+  }, [paused, videoError, data?.videoUrl, settingsOpen]);
+
+  useEffect(() => {
+    if (!controlsVisible) {
+      setSettingsOpen(false);
+    }
+  }, [controlsVisible]);
 
   useEffect(() => {
     if (!activeCue) {
@@ -349,7 +384,7 @@ export function StudySession({ task }: StudySessionProps) {
   function scheduleControlsHide(delay = 2200) {
     clearControlsHideTimer();
     setControlsVisible(true);
-    if (paused || videoError || !data?.videoUrl || controlsFocusedRef.current) {
+    if (paused || settingsOpen || videoError || !data?.videoUrl || controlsFocusedRef.current) {
       return;
     }
     hideControlsTimer.current = window.setTimeout(() => {
@@ -398,23 +433,17 @@ export function StudySession({ task }: StudySessionProps) {
 
   async function toggleFullscreen() {
     revealControls();
+    setSettingsOpen(false);
     try {
       if (isFullscreen) {
-        if (fullscreenMode === "dom" && document.fullscreenElement) {
-          await document.exitFullscreen();
-        } else if (fullscreenMode === "window" && isTauriRuntime) {
+        if (fullscreenMode === "window" && isTauriRuntime) {
           await getCurrentWindow().setFullscreen(false);
+        } else if (fullscreenMode === "dom" && document.fullscreenElement) {
+          await document.exitFullscreen();
         }
         setFullscreenMode(null);
         setIsFullscreen(false);
-        return;
-      }
-
-      const frame = videoFrameRef.current;
-      if (frame?.requestFullscreen) {
-        await frame.requestFullscreen();
-        setFullscreenMode("dom");
-        setIsFullscreen(true);
+        setVideoError(null);
         return;
       }
 
@@ -422,13 +451,41 @@ export function StudySession({ task }: StudySessionProps) {
         await getCurrentWindow().setFullscreen(true);
         setFullscreenMode("window");
         setIsFullscreen(true);
+        setVideoError(null);
+        return;
+      }
+
+      const frame = videoFrameRef.current;
+      if (document.fullscreenEnabled && frame?.requestFullscreen) {
+        await frame.requestFullscreen();
+        setFullscreenMode("dom");
+        setIsFullscreen(true);
+        setVideoError(null);
         return;
       }
 
       setVideoError("当前环境不支持全屏播放。");
     } catch {
-      setVideoError(isFullscreen ? "无法退出全屏播放。" : "无法进入全屏播放。");
+      setVideoError(isFullscreen ? "无法退出全屏播放。" : "无法进入全屏播放，请检查系统全屏权限。");
     }
+  }
+
+  function toggleCaptions() {
+    revealControls();
+    if (!captionTracks.length) {
+      return;
+    }
+    setSelectedCaptionId((current) => (current === "off" ? getDefaultCaptionId(captionTracks) : "off"));
+  }
+
+  function selectCaption(id: CaptionTrackId) {
+    setSelectedCaptionId(id);
+    revealControls();
+  }
+
+  function selectPlaybackRate(rate: number) {
+    setPlaybackRate(rate);
+    revealControls();
   }
 
   function seekTo(time: number) {
@@ -560,7 +617,6 @@ export function StudySession({ task }: StudySessionProps) {
 
             <div className="study-player-overlay" onFocusCapture={handleOverlayFocus} onBlurCapture={handleOverlayBlur}>
               <div className="study-progress-row">
-                <span>{formatClock(currentTime)}</span>
                 <input
                   aria-label="学习进度"
                   type="range"
@@ -571,53 +627,102 @@ export function StudySession({ task }: StudySessionProps) {
                   style={{ "--study-progress": `${progressPercent}%` } as CSSProperties}
                   onChange={(event) => seekTo(Number(event.currentTarget.value))}
                 />
-                <span>{formatClock(timelineEnd)}</span>
               </div>
 
-              <div className="study-control-bar">
-                <div className="study-controls">
-                  <button className="icon-tool" onClick={() => skipCue(-1)} aria-label="上一句">
-                    <ControlIcon name="previous" />
-                  </button>
-                  <button className="icon-tool" onClick={replayCurrentCue} aria-label="重播当前句">
-                    <ControlIcon name="replay" />
-                  </button>
-                  <button className="play-button" onClick={togglePlayback} aria-label={paused ? "播放" : "暂停"} disabled={!data.videoUrl}>
-                    <ControlIcon name={paused ? "play" : "pause"} />
-                  </button>
-                  <button className="icon-tool" onClick={() => skipCue(1)} aria-label="下一句">
-                    <ControlIcon name="next" />
-                  </button>
-                  <button className={`loop-button ${loopCue ? "active" : ""}`} onClick={() => setLoopCue((current) => !current)}>
-                    <ControlIcon name="loop" />
-                    <span>循环当前句</span>
-                  </button>
-                </div>
-
-                <div className="study-control-tools">
-                  <div className="rate-control" aria-label="倍速">
-                    {PLAYBACK_RATES.map((rate) => (
-                      <button className={playbackRate === rate ? "active" : ""} key={rate} onClick={() => setPlaybackRate(rate)}>
-                        {rate}x
+              <div className="study-control-dock">
+                {settingsOpen ? (
+                  <div className="study-settings-popover" role="menu" aria-label="播放设置">
+                    <div className="study-settings-section">
+                      <span>字幕</span>
+                      <button
+                        className={selectedCaptionId === "off" ? "active" : ""}
+                        onClick={() => selectCaption("off")}
+                        role="menuitemradio"
+                        aria-checked={selectedCaptionId === "off"}
+                      >
+                        关闭
                       </button>
-                    ))}
-                  </div>
-                  {captionTracks.length ? (
-                    <select
-                      className="caption-select"
-                      aria-label="字幕文件"
-                      value={selectedCaptionId}
-                      onChange={(event) => setSelectedCaptionId(event.currentTarget.value as CaptionTrackId)}
-                    >
-                      <option value="off">字幕关闭</option>
                       {captionTracks.map((track) => (
-                        <option key={track.id} value={track.id}>{track.label}</option>
+                        <button
+                          key={track.id}
+                          className={selectedCaptionId === track.id ? "active" : ""}
+                          onClick={() => selectCaption(track.id)}
+                          role="menuitemradio"
+                          aria-checked={selectedCaptionId === track.id}
+                        >
+                          {track.label}
+                        </button>
                       ))}
-                    </select>
-                  ) : null}
-                  <button className="icon-tool" onClick={toggleFullscreen} aria-label={isFullscreen ? "退出全屏" : "全屏播放"}>
-                    <ControlIcon name={isFullscreen ? "fullscreenExit" : "fullscreen"} />
-                  </button>
+                    </div>
+                    <div className="study-settings-section">
+                      <span>倍速</span>
+                      {PLAYBACK_RATES.map((rate) => (
+                        <button
+                          className={playbackRate === rate ? "active" : ""}
+                          key={rate}
+                          onClick={() => selectPlaybackRate(rate)}
+                          role="menuitemradio"
+                          aria-checked={playbackRate === rate}
+                        >
+                          {rate}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="study-control-bar">
+                  <div className="study-controls">
+                    <button className="play-button" onClick={togglePlayback} aria-label={paused ? "播放" : "暂停"} disabled={!data.videoUrl}>
+                      <ControlIcon name={paused ? "play" : "pause"} />
+                    </button>
+                    <button className="icon-tool" onClick={() => skipCue(-1)} aria-label="上一句">
+                      <ControlIcon name="previous" />
+                    </button>
+                    <button className="icon-tool" onClick={replayCurrentCue} aria-label="重播当前句">
+                      <ControlIcon name="replay" />
+                    </button>
+                    <button className="icon-tool" onClick={() => skipCue(1)} aria-label="下一句">
+                      <ControlIcon name="next" />
+                    </button>
+                    <button
+                      className={`icon-tool loop-tool ${loopCue ? "active" : ""}`}
+                      onClick={() => setLoopCue((current) => !current)}
+                      aria-label={loopCue ? "关闭单句循环" : "循环当前句"}
+                    >
+                      <ControlIcon name="loop" />
+                    </button>
+                    <span className="study-time-label">
+                      {formatClock(currentTime)} / {formatClock(timelineEnd)}
+                    </span>
+                  </div>
+
+                  <div className="study-control-tools">
+                    {captionTracks.length ? (
+                      <button
+                        className={`text-tool caption-tool ${selectedCaptionId !== "off" ? "active" : ""}`}
+                        onClick={toggleCaptions}
+                        aria-label={selectedCaptionId === "off" ? "打开字幕" : `关闭${selectedCaptionLabel}`}
+                        title={selectedCaptionLabel}
+                      >
+                        CC
+                      </button>
+                    ) : null}
+                    <button
+                      className={`icon-tool ${settingsOpen ? "active" : ""}`}
+                      onClick={() => {
+                        setSettingsOpen((current) => !current);
+                        revealControls();
+                      }}
+                      aria-label="播放设置"
+                      aria-expanded={settingsOpen}
+                    >
+                      <ControlIcon name="settings" />
+                    </button>
+                    <button className="icon-tool" onClick={toggleFullscreen} aria-label={isFullscreen ? "退出全屏" : "全屏播放"}>
+                      <ControlIcon name={isFullscreen ? "fullscreenExit" : "fullscreen"} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
