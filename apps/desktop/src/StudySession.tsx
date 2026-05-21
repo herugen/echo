@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { backend } from "./lib/backend";
@@ -282,6 +282,7 @@ export function StudySession({ task }: StudySessionProps) {
   const activeCueIndex = useMemo(() => findNearestCueIndex(cues, currentTime), [cues, currentTime]);
   const activeCue = activeCueIndex >= 0 ? cues[activeCueIndex] : null;
   const timelineEnd = Math.max(duration || 0, cues[cues.length - 1]?.end || 0, 1);
+  const progressPercent = Math.max(0, Math.min(100, (Math.min(currentTime, timelineEnd) / timelineEnd) * 100));
 
   useEffect(() => {
     const nextUrls: Partial<Record<CaptionFileTrackId, string>> = {};
@@ -567,6 +568,7 @@ export function StudySession({ task }: StudySessionProps) {
                   max={timelineEnd}
                   step="0.05"
                   value={Math.min(currentTime, timelineEnd)}
+                  style={{ "--study-progress": `${progressPercent}%` } as CSSProperties}
                   onChange={(event) => seekTo(Number(event.currentTarget.value))}
                 />
                 <span>{formatClock(timelineEnd)}</span>

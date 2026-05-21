@@ -656,6 +656,17 @@ button:disabled {
   cursor: none;
 }
 
+.study-video-frame::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: min(34%, 15rem);
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.58) 100%);
+  opacity: 0.9;
+}
+
 .study-video,
 .study-video-placeholder {
   width: 100%;
@@ -699,18 +710,13 @@ button:disabled {
 
 .study-player-overlay {
   position: absolute;
-  left: clamp(0.65rem, 1.5vw, 1.15rem);
-  right: clamp(0.65rem, 1.5vw, 1.15rem);
-  bottom: clamp(0.65rem, 1.8vw, 1.2rem);
+  left: clamp(1rem, 2vw, 1.8rem);
+  right: clamp(1rem, 2vw, 1.8rem);
+  bottom: clamp(0.8rem, 1.7vw, 1.35rem);
   z-index: 3;
   display: grid;
-  gap: 0.62rem;
-  padding: 0.72rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 18px;
-  background: rgba(8, 8, 8, 0.68);
-  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(18px);
+  gap: 0.56rem;
+  padding: 0;
   opacity: 1;
   transform: translateY(0);
   transition: opacity 180ms ease, transform 180ms ease;
@@ -724,18 +730,64 @@ button:disabled {
 
 .study-progress-row {
   display: grid;
-  grid-template-columns: 3.5rem minmax(0, 1fr) 3.5rem;
+  grid-template-columns: 3.25rem minmax(0, 1fr) 3.25rem;
   align-items: center;
-  gap: 0.7rem;
-  color: #d7e4ef;
+  gap: 0.62rem;
+  color: rgba(246, 242, 234, 0.82);
   font-variant-numeric: tabular-nums;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   font-weight: 700;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  pointer-events: auto;
 }
 
 .study-progress-row input {
+  --study-progress: 0%;
   width: 100%;
-  accent-color: #4f7dff;
+  height: 1rem;
+  margin: 0;
+  appearance: none;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      90deg,
+      #4f7dff 0%,
+      #4f7dff var(--study-progress),
+      rgba(255, 255, 255, 0.26) var(--study-progress),
+      rgba(255, 255, 255, 0.26) 100%
+    );
+  cursor: pointer;
+}
+
+.study-progress-row input::-webkit-slider-runnable-track {
+  height: 0.22rem;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.study-progress-row input::-webkit-slider-thumb {
+  width: 0.78rem;
+  height: 0.78rem;
+  margin-top: -0.28rem;
+  appearance: none;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 0 0.24rem rgba(79, 125, 255, 0.2), 0 4px 14px rgba(0, 0, 0, 0.38);
+}
+
+.study-progress-row input::-moz-range-track {
+  height: 0.22rem;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.study-progress-row input::-moz-range-thumb {
+  width: 0.78rem;
+  height: 0.78rem;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 0 0.24rem rgba(79, 125, 255, 0.2), 0 4px 14px rgba(0, 0, 0, 0.38);
 }
 
 .study-control-bar,
@@ -746,13 +798,21 @@ button:disabled {
 
 .study-control-bar {
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
+  pointer-events: auto;
 }
 
 .study-controls,
 .study-control-tools {
-  gap: 0.5rem;
+  gap: 0.22rem;
+  min-height: 2.9rem;
+  padding: 0.24rem;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  background: rgba(8, 8, 8, 0.54);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(18px);
 }
 
 .study-control-tools {
@@ -764,10 +824,11 @@ button:disabled {
 
 .study-controls button {
   color: #f6f2ea;
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
 }
 
-.study-controls svg {
+.study-controls svg,
+.study-control-tools svg {
   width: 1.05rem;
   height: 1.05rem;
   fill: none;
@@ -779,63 +840,98 @@ button:disabled {
 
 .icon-tool,
 .play-button {
-  width: 2.55rem;
-  height: 2.55rem;
+  width: 2.42rem;
+  height: 2.42rem;
   padding: 0;
   display: grid;
   place-items: center;
+  color: rgba(246, 242, 234, 0.9);
+  background: transparent;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.icon-tool:hover,
+.play-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.icon-tool:active,
+.play-button:active {
+  transform: scale(0.96);
 }
 
 .play-button {
-  width: 3.2rem;
-  height: 3.2rem;
+  width: 2.9rem;
+  height: 2.9rem;
   color: #ffffff;
-  background: #315ed6 !important;
-  box-shadow: 0 12px 28px rgba(49, 94, 214, 0.35);
+  background: #3f6df4 !important;
+  box-shadow: 0 10px 26px rgba(63, 109, 244, 0.42);
+}
+
+.play-button:hover {
+  background: #4d7aff !important;
 }
 
 .loop-button {
-  min-height: 2.55rem;
+  min-height: 2.42rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.42rem;
-  padding: 0.62rem 0.82rem;
-  font-size: 0.82rem;
+  gap: 0.34rem;
+  padding: 0.5rem 0.72rem;
+  font-size: 0.76rem;
   white-space: nowrap;
 }
 
 .loop-button.active,
 .rate-control button.active {
   color: #ffffff;
-  background: rgba(79, 125, 255, 0.72);
+  background: rgba(79, 125, 255, 0.8);
 }
 
 .rate-control {
   display: inline-flex;
-  padding: 0.18rem;
+  padding: 0;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.22);
-}
-
-.rate-control button {
-  padding: 0.48rem 0.62rem;
-  font-size: 0.78rem;
-  color: #c9c1b6;
   background: transparent;
 }
 
+.rate-control button {
+  min-height: 2.42rem;
+  padding: 0.42rem 0.56rem;
+  font-size: 0.74rem;
+  color: #c9c1b6;
+  background: transparent;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.rate-control button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .caption-select {
-  min-height: 2.55rem;
-  max-width: 8.5rem;
+  min-height: 2.42rem;
+  max-width: 7.8rem;
   border: 0;
   border-radius: 999px;
   padding: 0 2rem 0 0.82rem;
   color: #f6f2ea;
-  background: rgba(255, 255, 255, 0.1);
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, rgba(246, 242, 234, 0.75) 50%) calc(100% - 0.95rem) 52% / 0.34rem 0.34rem no-repeat,
+    linear-gradient(135deg, rgba(246, 242, 234, 0.75) 50%, transparent 50%) calc(100% - 0.75rem) 52% / 0.34rem 0.34rem no-repeat,
+    transparent;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   font-weight: 700;
   outline: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.caption-select:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .caption-select:focus-visible {
@@ -1031,8 +1127,7 @@ button:disabled {
     left: 0.5rem;
     right: 0.5rem;
     bottom: 0.5rem;
-    padding: 0.55rem;
-    border-radius: 15px;
+    gap: 0.44rem;
   }
 
   .study-progress-row {
