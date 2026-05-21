@@ -662,28 +662,76 @@ button:disabled {
   inset-inline: 0;
   bottom: 0;
   height: min(34%, 15rem);
+  z-index: 1;
   pointer-events: none;
   background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.58) 100%);
   opacity: 0.9;
 }
 
-.study-video,
+.study-media-player,
 .study-video-placeholder {
   width: 100%;
   height: 100%;
 }
 
-.study-video {
+.study-media-player {
+  --video-bg: #030303;
+  --video-border: 0;
+  --video-border-radius: 20px;
+  --video-brand: #87abff;
+  --video-controls-color: #f9fbff;
+  --video-title-color: rgba(249, 251, 255, 0.72);
+  --video-scrim-bg: rgba(0, 0, 0, 0.34);
+  --video-captions-offset: 92px;
+  --video-large-fullscreen-captions-offset: 78px;
+  --media-button-border-radius: 999px;
+  --media-button-hover-bg: rgba(255, 255, 255, 0.14);
+  --media-button-size: 2.4rem;
+  --media-button-icon-size: 70%;
+  --media-font-family: inherit;
+  --media-menu-bg: rgba(15, 17, 22, 0.92);
+  --media-menu-border: 1px solid rgba(255, 255, 255, 0.12);
+  --media-menu-border-radius: 8px;
+  --media-slider-track-fill-bg: linear-gradient(90deg, #7fa5ff, #f4bd6d);
+  --media-slider-track-bg: rgba(255, 255, 255, 0.2);
+  --media-slider-track-progress-bg: rgba(255, 255, 255, 0.34);
+  --media-slider-thumb-bg: #ffffff;
+  --media-tooltip-bg-color: rgba(12, 14, 18, 0.92);
+  --media-tooltip-border-radius: 8px;
+  --media-focus-ring: 0 0 0 3px rgba(135, 171, 255, 0.42);
+  position: relative;
   display: block;
-  object-fit: contain;
-  background: #050505;
+  border: 0;
+  border-radius: inherit;
+  color: #ffffff;
+  background:
+    radial-gradient(circle at 15% 12%, rgba(135, 171, 255, 0.14), transparent 30%),
+    radial-gradient(circle at 82% 78%, rgba(244, 189, 109, 0.1), transparent 28%),
+    #030303;
+  overflow: hidden;
 }
 
-.study-video::cue {
-  color: #ffffff;
-  background: rgba(0, 0, 0, 0.58);
-  font-size: 118%;
-  line-height: 1.35;
+.study-media-player media-outlet,
+.study-media-player media-outlet > shadow-root,
+.study-media-player media-outlet video {
+  width: 100%;
+  height: 100%;
+}
+
+.study-media-player media-outlet video {
+  display: block;
+  object-fit: contain;
+  background: #030303;
+}
+
+.study-media-player media-captions {
+  --media-cue-bg: rgba(0, 0, 0, 0.68);
+  --media-cue-border-radius: 8px;
+  --media-cue-font-size: clamp(1rem, 2.4vw, 1.55rem);
+  --media-cue-line-height: 1.42;
+  --media-cue-text-shadow: 0 1px 18px rgba(0, 0, 0, 0.74);
+  z-index: 2;
+  bottom: clamp(4.8rem, 10vh, 6.6rem);
 }
 
 .study-video-placeholder {
@@ -699,13 +747,96 @@ button:disabled {
 .study-video-error {
   position: absolute;
   inset-inline: 0.75rem;
-  top: 0.75rem;
+  top: 3.8rem;
   padding: 0.55rem 0.7rem;
   border-radius: 12px;
   color: #ffb4a8;
   background: rgba(17, 12, 10, 0.84);
   font-size: 0.82rem;
-  z-index: 4;
+  z-index: 6;
+}
+
+.study-learning-dock {
+  position: absolute;
+  top: 0.78rem;
+  left: 0.78rem;
+  right: 4.4rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  pointer-events: none;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.study-learning-dock.hidden {
+  opacity: 0;
+  transform: translateY(-0.5rem);
+}
+
+.study-learning-dock > * {
+  pointer-events: auto;
+}
+
+.study-cue-meter,
+.study-rate-switch {
+  min-height: 2.42rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #f9fbff;
+  background: rgba(12, 14, 19, 0.58);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.study-cue-meter {
+  gap: 0.48rem;
+  padding: 0 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.study-cue-meter span {
+  color: #f4bd6d;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.study-cue-meter strong {
+  color: rgba(249, 251, 255, 0.72);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.study-rate-switch {
+  overflow: hidden;
+  padding: 0.12rem;
+}
+
+.study-rate-switch button {
+  min-width: 2.8rem;
+  height: 2.02rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  color: rgba(249, 251, 255, 0.72);
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.study-rate-switch button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.study-rate-switch button.active {
+  color: #111317;
+  background: linear-gradient(135deg, #f5c16f, #86a8ff);
 }
 
 .study-player-overlay {
@@ -1153,6 +1284,26 @@ button:disabled {
     right: 0.5rem;
     bottom: 0.5rem;
     gap: 0.44rem;
+  }
+
+  .study-learning-dock {
+    top: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.32rem;
+  }
+
+  .study-cue-meter,
+  .study-rate-switch {
+    min-height: 2.16rem;
+  }
+
+  .study-rate-switch button {
+    min-width: 2.38rem;
+    height: 1.82rem;
+    padding: 0 0.42rem;
+    font-size: 0.66rem;
   }
 
   .study-progress-row {

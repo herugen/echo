@@ -1,6 +1,10 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { MediaCaptions, MediaOutlet, MediaPlayer } from "@vidstack/react";
+import type { TextTrackInit } from "vidstack";
+import "vidstack/styles/defaults.css";
+import "vidstack/styles/ui/captions.css";
 import { backend } from "./lib/backend";
 import { formatClock, mergeSubtitleTracks, srtToWebVtt } from "./lib/subtitles";
 import type { SubtitleCue, TaskSummary } from "./types";
@@ -40,6 +44,17 @@ interface StudyData {
 interface StudySessionProps {
   task: TaskSummary;
 }
+
+type VidstackDetailEvent<T> = Event & { detail: T };
+type StudyMediaPlayerElement = HTMLElement & {
+  currentTime: number;
+  paused: boolean;
+  playbackRate: number;
+  play(): Promise<void>;
+  pause(): Promise<void>;
+  enterFullscreen(): Promise<void>;
+  exitFullscreen(): Promise<void>;
+};
 
 const VIDEO_EXTENSION = /\.(mp4|m4v|mov|mkv|webm|avi)(?:$|\?)/i;
 const PLAYBACK_RATES = [0.75, 1, 1.25];
@@ -140,6 +155,32 @@ function resolveVideoUrl(path?: string): string {
     return path;
   }
   return isTauriRuntime ? convertFileSrc(path) : "";
+}
+
+function resolveVideoMimeType(path?: string): string | undefined {
+  if (!path) {
+    return undefined;
+  }
+  const cleanPath = path.split("?")[0].toLowerCase();
+  if (cleanPath.endsWith(".m3u8")) {
+    return "application/x-mpegurl";
+  }
+  if (cleanPath.endsWith(".mp4") || cleanPath.endsWith(".m4v")) {
+    return "video/mp4";
+  }
+  if (cleanPath.endsWith(".mov")) {
+    return "video/quicktime";
+  }
+  if (cleanPath.endsWith(".webm")) {
+    return "video/webm";
+  }
+  if (cleanPath.endsWith(".mkv")) {
+    return "video/x-matroska";
+  }
+  if (cleanPath.endsWith(".avi")) {
+    return "video/x-msvideo";
+  }
+  return undefined;
 }
 
 async function readOptionalSubtitle(path?: string): Promise<string> {
@@ -245,7 +286,7 @@ function findNearestCueIndex(cues: SubtitleCue[], time: number): number {
 }
 
 export function StudySession({ task }: StudySessionProps) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerRef = useRef<StudyMediaPlayerElement | null>(null);
   const videoFrameRef = useRef<HTMLDivElement | null>(null);
   const subtitleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const hideControlsTimer = useRef<number | null>(null);
@@ -260,11 +301,8 @@ export function StudySession({ task }: StudySessionProps) {
   const [loopCue, setLoopCue] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fullscreenMode, setFullscreenMode] = useState<"dom" | "window" | null>(null);
-  const [selectedCaptionId, setSelectedCaptionId] = useState<CaptionTrackId>("off");
-  const [captionUrls, setCaptionUrls] = useState<Partial<Record<CaptionFileTrackId, string>>>({});
+  const [fullscreenMode, setFullscreenMode] = useState<"dom" | "player" | "window" | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -275,15 +313,16 @@ export function StudySession({ task }: StudySessionProps) {
     setDuration(0);
     setPaused(true);
     setControlsVisible(true);
-    setSettingsOpen(false);
-    setSelectedCaptionId("off");
+    setLoopCue(false);
+    setPlaybackRate(1);
+    setFullscreenMode(null);
+    setIsFullscreen(false);
     subtitleRefs.current = {};
 
     loadStudyData(task)
       .then((nextData) => {
         if (!alive) return;
         setData(nextData);
-        setSelectedCaptionId(getDefaultCaptionId(nextData.captionTracks));
         setLoading(false);
       })
       .catch((cause) => {
@@ -299,8 +338,8 @@ export function StudySession({ task }: StudySessionProps) {
   }, [task]);
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = playbackRate;
+    if (playerRef.current) {
+      playerRef.current.playbackRate = playbackRate;
     }
   }, [playbackRate, data?.videoUrl]);
 
@@ -310,36 +349,45 @@ export function StudySession({ task }: StudySessionProps) {
   const activeCue = activeCueIndex >= 0 ? cues[activeCueIndex] : null;
   const timelineEnd = Math.max(duration || 0, cues[cues.length - 1]?.end || 0, 1);
   const progressPercent = Math.max(0, Math.min(100, (Math.min(currentTime, timelineEnd) / timelineEnd) * 100));
-  const selectedCaptionLabel =
-    selectedCaptionId === "off" ? "字幕关闭" : captionTracks.find((track) => track.id === selectedCaptionId)?.label ?? "字幕";
-
-  useEffect(() => {
-    const nextUrls: Partial<Record<CaptionFileTrackId, string>> = {};
-    captionTracks.forEach((track) => {
+  const mediaSource = useMemo(() => {
+    if (!data?.videoUrl) {
+      return "";
+    }
+    const type = resolveVideoMimeType(data.videoPath ?? data.videoUrl);
+    return type ? { src: data.videoUrl, type } : data.videoUrl;
+  }, [data?.videoPath, data?.videoUrl]);
+  const vidstackTextTracks = useMemo<TextTrackInit[]>(() => {
+    const defaultCaptionId = getDefaultCaptionId(captionTracks);
+    return captionTracks.flatMap((track) => {
       const vtt = srtToWebVtt(track.text);
-      if (vtt) {
-        nextUrls[track.id] = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
+      if (!vtt) {
+        return [];
       }
+      return [
+        {
+          id: track.id,
+          kind: "subtitles" as const,
+          label: track.label,
+          language: track.language,
+          content: vtt,
+          type: "vtt" as const,
+          default: track.id === defaultCaptionId,
+        },
+      ];
     });
-    setCaptionUrls(nextUrls);
-
-    return () => {
-      Object.values(nextUrls).forEach((url) => URL.revokeObjectURL(url));
-    };
   }, [captionTracks]);
-
-  useEffect(() => {
-    syncTextTrackMode();
-  }, [captionTracks, captionUrls, selectedCaptionId, isFullscreen]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
       const isFrameFullscreen = document.fullscreenElement === videoFrameRef.current;
-      if (isFrameFullscreen) {
+      const player = playerRef.current;
+      const isPlayerFullscreen =
+        !!player && (document.fullscreenElement === player || (document.fullscreenElement instanceof Node && player.contains(document.fullscreenElement)));
+      if (isFrameFullscreen || isPlayerFullscreen) {
         setFullscreenMode("dom");
         setIsFullscreen(true);
         revealControls();
-      } else if (fullscreenMode === "dom") {
+      } else if (fullscreenMode === "dom" || fullscreenMode === "player") {
         setFullscreenMode(null);
         setIsFullscreen(false);
         revealControls();
@@ -359,13 +407,7 @@ export function StudySession({ task }: StudySessionProps) {
         window.clearTimeout(hideControlsTimer.current);
       }
     };
-  }, [paused, videoError, data?.videoUrl, settingsOpen]);
-
-  useEffect(() => {
-    if (!controlsVisible) {
-      setSettingsOpen(false);
-    }
-  }, [controlsVisible]);
+  }, [paused, videoError, data?.videoUrl]);
 
   useEffect(() => {
     if (!activeCue) {
@@ -373,6 +415,41 @@ export function StudySession({ task }: StudySessionProps) {
     }
     subtitleRefs.current[activeCue.id]?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [activeCue]);
+
+  useEffect(() => {
+    const handleStudyShortcuts = (event: KeyboardEvent) => {
+      if (!data?.videoUrl || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (event.key === "[") {
+        event.preventDefault();
+        skipCue(-1);
+      } else if (event.key === "]") {
+        event.preventDefault();
+        skipCue(1);
+      } else if (event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        replayCurrentCue();
+      } else if (event.key.toLowerCase() === "l") {
+        event.preventDefault();
+        setLoopCue((current) => !current);
+        revealControls();
+      }
+    };
+
+    window.addEventListener("keydown", handleStudyShortcuts);
+    return () => window.removeEventListener("keydown", handleStudyShortcuts);
+  }, [activeCueIndex, cues, data?.videoUrl]);
 
   function clearControlsHideTimer() {
     if (hideControlsTimer.current !== null) {
@@ -384,7 +461,7 @@ export function StudySession({ task }: StudySessionProps) {
   function scheduleControlsHide(delay = 2200) {
     clearControlsHideTimer();
     setControlsVisible(true);
-    if (paused || settingsOpen || videoError || !data?.videoUrl || controlsFocusedRef.current) {
+    if (paused || videoError || !data?.videoUrl || controlsFocusedRef.current) {
       return;
     }
     hideControlsTimer.current = window.setTimeout(() => {
@@ -394,26 +471,6 @@ export function StudySession({ task }: StudySessionProps) {
 
   function revealControls() {
     scheduleControlsHide();
-  }
-
-  function syncTextTrackMode() {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    const visibleCaptionId = isFullscreen ? selectedCaptionId : "off";
-    let textTrackIndex = 0;
-    captionTracks.forEach((track) => {
-      if (!captionUrls[track.id]) {
-        return;
-      }
-      const textTrack = video.textTracks[textTrackIndex];
-      textTrackIndex += 1;
-      if (textTrack) {
-        textTrack.mode = track.id === visibleCaptionId ? "showing" : "disabled";
-      }
-    });
   }
 
   function handleOverlayFocus() {
@@ -433,11 +490,12 @@ export function StudySession({ task }: StudySessionProps) {
 
   async function toggleFullscreen() {
     revealControls();
-    setSettingsOpen(false);
     try {
       if (isFullscreen) {
         if (fullscreenMode === "window" && isTauriRuntime) {
           await getCurrentWindow().setFullscreen(false);
+        } else if (fullscreenMode === "player" && playerRef.current) {
+          await playerRef.current.exitFullscreen();
         } else if (fullscreenMode === "dom" && document.fullscreenElement) {
           await document.exitFullscreen();
         }
@@ -450,6 +508,14 @@ export function StudySession({ task }: StudySessionProps) {
       if (isTauriRuntime) {
         await getCurrentWindow().setFullscreen(true);
         setFullscreenMode("window");
+        setIsFullscreen(true);
+        setVideoError(null);
+        return;
+      }
+
+      if (playerRef.current) {
+        await playerRef.current.enterFullscreen();
+        setFullscreenMode("player");
         setIsFullscreen(true);
         setVideoError(null);
         return;
@@ -470,19 +536,6 @@ export function StudySession({ task }: StudySessionProps) {
     }
   }
 
-  function toggleCaptions() {
-    revealControls();
-    if (!captionTracks.length) {
-      return;
-    }
-    setSelectedCaptionId((current) => (current === "off" ? getDefaultCaptionId(captionTracks) : "off"));
-  }
-
-  function selectCaption(id: CaptionTrackId) {
-    setSelectedCaptionId(id);
-    revealControls();
-  }
-
   function selectPlaybackRate(rate: number) {
     setPlaybackRate(rate);
     revealControls();
@@ -491,8 +544,8 @@ export function StudySession({ task }: StudySessionProps) {
   function seekTo(time: number) {
     const nextTime = Math.max(0, Math.min(time, timelineEnd));
     setCurrentTime(nextTime);
-    if (videoRef.current) {
-      videoRef.current.currentTime = nextTime;
+    if (playerRef.current) {
+      playerRef.current.currentTime = nextTime;
     }
   }
 
@@ -502,7 +555,7 @@ export function StudySession({ task }: StudySessionProps) {
       return;
     }
     seekTo(cue.start + 0.02);
-    if (shouldPlay && videoRef.current) {
+    if (shouldPlay && playerRef.current) {
       playVideo();
     }
   }
@@ -525,41 +578,84 @@ export function StudySession({ task }: StudySessionProps) {
   }
 
   function togglePlayback() {
-    if (!videoRef.current) {
+    const player = playerRef.current;
+    if (!player) {
       return;
     }
-    if (videoRef.current.paused) {
+    if (player.paused) {
       playVideo();
     } else {
-      videoRef.current.pause();
+      player.pause();
     }
   }
 
   function playVideo() {
-    const video = videoRef.current;
-    if (!video) {
+    const player = playerRef.current;
+    if (!player) {
       return;
     }
-    video.play().catch(() => {
+    player.play().catch(() => {
       setPaused(true);
       setVideoError("视频暂时无法播放，请稍后重试。");
     });
   }
 
-  function handleTimeUpdate(event: React.SyntheticEvent<HTMLVideoElement>) {
-    const video = event.currentTarget;
-    const nextTime = video.currentTime;
+  function handleTimeUpdate(event: Event) {
+    const nextTime = (event as VidstackDetailEvent<{ currentTime: number }>).detail.currentTime;
     if (loopCue) {
       const cueIndex = findCueIndexAtTime(cues, nextTime);
       const cue = cues[cueIndex];
       if (cue && cue.end - cue.start > 0.2 && nextTime >= cue.end - 0.06) {
         const restartTime = cue.start + 0.02;
-        video.currentTime = restartTime;
+        if (playerRef.current) {
+          playerRef.current.currentTime = restartTime;
+        }
         setCurrentTime(restartTime);
         return;
       }
     }
     setCurrentTime(nextTime);
+  }
+
+  function handleCanPlay(event: Event) {
+    setDuration((event as VidstackDetailEvent<{ duration: number }>).detail.duration || 0);
+    setVideoError(null);
+  }
+
+  function handleDurationChange(event: Event) {
+    setDuration((event as VidstackDetailEvent<number>).detail || 0);
+  }
+
+  function handleRateChange(event: Event) {
+    setPlaybackRate((event as VidstackDetailEvent<number>).detail || 1);
+  }
+
+  function handlePlayerFullscreenChange(event: Event) {
+    if (fullscreenMode === "window") {
+      return;
+    }
+    const isPlayerFullscreen = (event as VidstackDetailEvent<boolean>).detail;
+    setFullscreenMode(isPlayerFullscreen ? "player" : null);
+    setIsFullscreen(isPlayerFullscreen);
+    revealControls();
+  }
+
+  function handlePlayerError(event: Event) {
+    const detail = (event as VidstackDetailEvent<{ message?: string }>).detail;
+    setVideoError(detail?.message || "视频文件无法在当前窗口播放。");
+  }
+
+  function handlePlayFail() {
+    setPaused(true);
+    setVideoError("视频暂时无法播放，请稍后重试。");
+  }
+
+  function handleFullscreenFallback() {
+    if (isTauriRuntime && !isFullscreen) {
+      void toggleFullscreen();
+      return;
+    }
+    setVideoError(isFullscreen ? "无法退出全屏播放。" : "无法进入全屏播放，请检查系统全屏权限。");
   }
 
   if (loading) {
@@ -582,38 +678,57 @@ export function StudySession({ task }: StudySessionProps) {
             onMouseLeave={() => scheduleControlsHide(700)}
           >
             {data.videoUrl ? (
-              <video
-                ref={videoRef}
-                className="study-video"
-                src={data.videoUrl}
-                playsInline
-                onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
-                onLoadedData={syncTextTrackMode}
+              <MediaPlayer
+                ref={playerRef}
+                className="study-media-player"
+                data-testid="study-media-player"
+                src={mediaSource}
+                title={task.title}
+                viewType="video"
+                load="eager"
+                preload="metadata"
+                playsinline
+                playbackRate={playbackRate}
+                textTracks={vidstackTextTracks}
+                keyTarget="player"
+                onCanPlay={handleCanPlay}
+                onDurationChange={handleDurationChange}
                 onTimeUpdate={handleTimeUpdate}
+                onRateChange={handleRateChange}
                 onPlay={() => setPaused(false)}
                 onPause={() => setPaused(true)}
                 onEnded={() => setPaused(true)}
-                onClick={togglePlayback}
-                onError={() => setVideoError("视频文件无法在当前窗口播放。")}
+                onError={handlePlayerError}
+                onPlayFail={handlePlayFail}
+                onFullscreenChange={handlePlayerFullscreenChange}
+                onFullscreenError={handleFullscreenFallback}
               >
-                {captionTracks.map((track) => {
-                  const trackUrl = captionUrls[track.id];
-                  return trackUrl ? (
-                    <track
-                      key={track.id}
-                      kind="subtitles"
-                      src={trackUrl}
-                      srcLang={track.language}
-                      label={track.label}
-                      onLoad={syncTextTrackMode}
-                    />
-                  ) : null;
-                })}
-              </video>
+                <MediaOutlet />
+                <MediaCaptions />
+              </MediaPlayer>
             ) : (
               <div className="study-video-placeholder">未找到可播放的视频文件</div>
             )}
             {videoError ? <div className="study-video-error">{videoError}</div> : null}
+
+            <div
+              className={`study-learning-dock ${controlsVisible ? "" : "hidden"}`}
+              data-testid="study-learning-dock"
+              onFocusCapture={handleOverlayFocus}
+              onBlurCapture={handleOverlayBlur}
+            >
+              <div className="study-cue-meter">
+                <span>{activeCue ? formatClock(activeCue.start) : formatClock(currentTime)}</span>
+                <strong>{activeCueIndex >= 0 ? `${activeCueIndex + 1}/${cues.length}` : "0/0"}</strong>
+              </div>
+              <div className="study-rate-switch" role="group" aria-label="播放速度">
+                {PLAYBACK_RATES.map((rate) => (
+                  <button className={playbackRate === rate ? "active" : ""} key={rate} onClick={() => selectPlaybackRate(rate)}>
+                    {rate}x
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="study-player-overlay" onFocusCapture={handleOverlayFocus} onBlurCapture={handleOverlayBlur}>
               <div className="study-progress-row">
@@ -630,47 +745,6 @@ export function StudySession({ task }: StudySessionProps) {
               </div>
 
               <div className="study-control-dock">
-                {settingsOpen ? (
-                  <div className="study-settings-popover" role="menu" aria-label="播放设置">
-                    <div className="study-settings-section">
-                      <span>字幕</span>
-                      <button
-                        className={selectedCaptionId === "off" ? "active" : ""}
-                        onClick={() => selectCaption("off")}
-                        role="menuitemradio"
-                        aria-checked={selectedCaptionId === "off"}
-                      >
-                        关闭
-                      </button>
-                      {captionTracks.map((track) => (
-                        <button
-                          key={track.id}
-                          className={selectedCaptionId === track.id ? "active" : ""}
-                          onClick={() => selectCaption(track.id)}
-                          role="menuitemradio"
-                          aria-checked={selectedCaptionId === track.id}
-                        >
-                          {track.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="study-settings-section">
-                      <span>倍速</span>
-                      {PLAYBACK_RATES.map((rate) => (
-                        <button
-                          className={playbackRate === rate ? "active" : ""}
-                          key={rate}
-                          onClick={() => selectPlaybackRate(rate)}
-                          role="menuitemradio"
-                          aria-checked={playbackRate === rate}
-                        >
-                          {rate}x
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
                 <div className="study-control-bar">
                   <div className="study-controls">
                     <button className="play-button" onClick={togglePlayback} aria-label={paused ? "播放" : "暂停"} disabled={!data.videoUrl}>
@@ -687,7 +761,10 @@ export function StudySession({ task }: StudySessionProps) {
                     </button>
                     <button
                       className={`icon-tool loop-tool ${loopCue ? "active" : ""}`}
-                      onClick={() => setLoopCue((current) => !current)}
+                      onClick={() => {
+                        setLoopCue((current) => !current);
+                        revealControls();
+                      }}
                       aria-label={loopCue ? "关闭单句循环" : "循环当前句"}
                     >
                       <ControlIcon name="loop" />
@@ -698,27 +775,6 @@ export function StudySession({ task }: StudySessionProps) {
                   </div>
 
                   <div className="study-control-tools">
-                    {captionTracks.length ? (
-                      <button
-                        className={`text-tool caption-tool ${selectedCaptionId !== "off" ? "active" : ""}`}
-                        onClick={toggleCaptions}
-                        aria-label={selectedCaptionId === "off" ? "打开字幕" : `关闭${selectedCaptionLabel}`}
-                        title={selectedCaptionLabel}
-                      >
-                        CC
-                      </button>
-                    ) : null}
-                    <button
-                      className={`icon-tool ${settingsOpen ? "active" : ""}`}
-                      onClick={() => {
-                        setSettingsOpen((current) => !current);
-                        revealControls();
-                      }}
-                      aria-label="播放设置"
-                      aria-expanded={settingsOpen}
-                    >
-                      <ControlIcon name="settings" />
-                    </button>
                     <button className="icon-tool" onClick={toggleFullscreen} aria-label={isFullscreen ? "退出全屏" : "全屏播放"}>
                       <ControlIcon name={isFullscreen ? "fullscreenExit" : "fullscreen"} />
                     </button>

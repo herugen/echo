@@ -17,6 +17,104 @@ export interface DesktopBackend {
   listTasks(): Promise<TaskSummary[]>;
 }
 
+const PREVIEW_VIDEO_URL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+const PREVIEW_SOURCE_SRT = `1
+00:00:00,000 --> 00:00:01,400
+Welcome to Echo.
+
+2
+00:00:01,400 --> 00:00:02,700
+This player is powered by Vidstack.
+
+3
+00:00:02,700 --> 00:00:04,000
+Jump sentence by sentence while the video keeps context.
+
+4
+00:00:04,000 --> 00:00:05,300
+Loop one line until the rhythm feels natural.
+`;
+const PREVIEW_TRANSLATED_SRT = `1
+00:00:00,000 --> 00:00:01,400
+欢迎来到 Echo。
+
+2
+00:00:01,400 --> 00:00:02,700
+这个播放器现在由 Vidstack 驱动。
+
+3
+00:00:02,700 --> 00:00:04,000
+你可以按句跳转，同时保留视频上下文。
+
+4
+00:00:04,000 --> 00:00:05,300
+单句循环，直到节奏变得自然。
+`;
+const PREVIEW_BILINGUAL_SRT = `1
+00:00:00,000 --> 00:00:01,400
+Welcome to Echo.
+欢迎来到 Echo。
+
+2
+00:00:01,400 --> 00:00:02,700
+This player is powered by Vidstack.
+这个播放器现在由 Vidstack 驱动。
+
+3
+00:00:02,700 --> 00:00:04,000
+Jump sentence by sentence while the video keeps context.
+你可以按句跳转，同时保留视频上下文。
+
+4
+00:00:04,000 --> 00:00:05,300
+Loop one line until the rhythm feels natural.
+单句循环，直到节奏变得自然。
+`;
+
+function shouldShowStudyPreview(): boolean {
+  return typeof window !== "undefined" && new URLSearchParams(window.location.search).get("studyPreview") === "1";
+}
+
+function previewTask(): TaskSummary {
+  return {
+    id: "browser-preview-study",
+    title: "Echo Vidstack Preview",
+    status: "succeeded",
+    stageLabel: "finalize_video",
+    detail: "浏览器预览演示任务",
+    assetDir: "preview://echo",
+    progress: 1,
+    stages: [
+      {
+        name: "acquire_input",
+        status: "succeeded",
+        detail: "Preview video",
+        artifacts: [PREVIEW_VIDEO_URL],
+      },
+      {
+        name: "generate_source_subtitles",
+        status: "succeeded",
+        artifacts: ["preview://source.srt"],
+      },
+      {
+        name: "generate_translated_subtitles",
+        status: "succeeded",
+        artifacts: ["preview://translated.srt"],
+      },
+      {
+        name: "generate_bilingual_subtitles",
+        status: "succeeded",
+        artifacts: ["preview://bilingual.srt"],
+      },
+      {
+        name: "finalize_video",
+        status: "succeeded",
+        artifacts: [],
+      },
+    ],
+  };
+}
+
 class TauriBackend implements DesktopBackend {
   getSettings(): Promise<AppSettings> {
     return invoke<AppSettings>("get_settings");
@@ -132,12 +230,21 @@ class BrowserPreviewBackend implements DesktopBackend {
     throw new Error("请在桌面应用中打开本地路径。");
   }
 
-  async readTextFile(): Promise<string> {
+  async readTextFile(path: string): Promise<string> {
+    if (path === "preview://source.srt") {
+      return PREVIEW_SOURCE_SRT;
+    }
+    if (path === "preview://translated.srt") {
+      return PREVIEW_TRANSLATED_SRT;
+    }
+    if (path === "preview://bilingual.srt") {
+      return PREVIEW_BILINGUAL_SRT;
+    }
     throw new Error("请在桌面应用中读取真实字幕。");
   }
 
   async listTasks(): Promise<TaskSummary[]> {
-    return [];
+    return shouldShowStudyPreview() ? [previewTask()] : [];
   }
 }
 
