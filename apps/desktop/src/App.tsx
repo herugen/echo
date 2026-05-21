@@ -408,12 +408,7 @@ function App() {
               </button>
             </div>
             {selectedTask.status === "succeeded" ? (
-              <StudySession
-                task={selectedTask}
-                copiedPath={copiedPath}
-                onOpenPath={(path) => void handleOpenPath(path)}
-                onCopyPath={(path) => void handleCopyPath(path)}
-              />
+              <StudySession task={selectedTask} />
             ) : (
               <div className="task-detail">
                 <div className="path-card">

@@ -16,7 +16,12 @@ const SOFT_ENGLISH_BOUNDARY = /(?<=,)\s+|(?=\b(?:so|but|and|then|because|basical
 const SOFT_CJK_BOUNDARY = /(?<=[，、：])|(?=所以|然后|但是|因为|那么|这个|那个|我们|你们|他们|它们)/;
 
 function parseTimestamp(value: string): number {
-  const normalized = value.trim().replace(",", ".");
+  const timestamp = value.match(TIMESTAMP_PATTERN)?.[0];
+  if (!timestamp) {
+    return 0;
+  }
+
+  const normalized = timestamp.replace(",", ".");
   const parts = normalized.split(":");
   if (parts.length < 2) {
     return 0;
@@ -26,6 +31,19 @@ function parseTimestamp(value: string): number {
   const minutes = Number(parts.pop() ?? 0);
   const hours = Number(parts.pop() ?? 0);
   return hours * 3600 + minutes * 60 + seconds;
+}
+
+function formatVttTimestamp(seconds: number): string {
+  const totalMilliseconds = Math.max(0, Math.round((Number.isFinite(seconds) ? seconds : 0) * 1000));
+  const hours = Math.floor(totalMilliseconds / 3_600_000);
+  const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000);
+  const wholeSeconds = Math.floor((totalMilliseconds % 60_000) / 1000);
+  const milliseconds = totalMilliseconds % 1000;
+  return [
+    String(hours).padStart(2, "0"),
+    String(minutes).padStart(2, "0"),
+    `${String(wholeSeconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`,
+  ].join(":");
 }
 
 function normalizeText(lines: string[]): string {
@@ -71,6 +89,20 @@ export function parseSrt(text: string): ParsedCue[] {
         },
       ];
     });
+}
+
+export function srtToWebVtt(text: string): string {
+  const cues = parseSrt(text);
+  if (!cues.length) {
+    return "";
+  }
+
+  const blocks = cues.map((cue) => [
+    `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}`,
+    cue.text,
+  ].join("\n"));
+
+  return ["WEBVTT", "", ...blocks].join("\n\n");
 }
 
 function findMatchingCue(cues: ParsedCue[], sourceCue: ParsedCue, index: number): ParsedCue | undefined {
