@@ -576,7 +576,7 @@ button:disabled {
 }
 
 .study-modal {
-  width: min(980px, calc(100vw - 2rem));
+  width: min(1120px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow: hidden;
   display: grid;
@@ -593,7 +593,7 @@ button:disabled {
   min-height: 0;
   height: min(620px, calc(100vh - 9rem));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 370px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
   gap: 0.9rem;
 }
 
@@ -740,30 +740,43 @@ button:disabled {
 
 .subtitle-panel {
   overflow: auto;
-  padding: 0.65rem;
-  display: grid;
-  align-content: start;
-  gap: 0.55rem;
+  padding: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
   scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
 
 .subtitle-card {
   width: 100%;
-  min-height: 112px;
+  min-height: 0;
+  height: auto;
+  flex: 0 0 auto;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  padding: 0.85rem;
-  display: grid;
-  gap: 0.42rem;
+  border-radius: 14px;
+  padding: 0.72rem 0.78rem;
+  appearance: none;
+  display: block;
   text-align: left;
   color: #f6f2ea;
   background: rgba(255, 255, 255, 0.055);
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  cursor: pointer;
 }
 
 .subtitle-card:hover {
   border-color: rgba(79, 125, 255, 0.38);
   background: rgba(79, 125, 255, 0.1);
+}
+
+.subtitle-card:focus-visible {
+  outline: 2px solid rgba(143, 176, 255, 0.9);
+  outline-offset: 2px;
 }
 
 .subtitle-card.active {
@@ -776,6 +789,8 @@ button:disabled {
 }
 
 .subtitle-time {
+  display: block;
+  margin-bottom: 0.38rem;
   color: #8fb0ff;
   font-size: 0.78rem;
   font-weight: 800;
@@ -783,16 +798,43 @@ button:disabled {
 }
 
 .subtitle-source {
+  display: block;
+  min-width: 0;
+  margin-bottom: 0.34rem;
+  max-height: 3.95rem;
+  overflow: hidden;
   color: #ffffff;
-  font-size: 1.05rem;
+  font-size: 0.92rem;
+  line-height: 1.42;
+  font-weight: 750;
+}
+
+.subtitle-translation {
+  display: block;
+  min-width: 0;
+  max-height: 2.45rem;
+  overflow: hidden;
+  color: #b7c0ca;
+  font-size: 0.8rem;
+  line-height: 1.48;
+}
+
+.subtitle-card.active .subtitle-source,
+.subtitle-card.active .subtitle-translation {
+  display: block;
+  max-height: none;
+  overflow: visible;
+}
+
+.subtitle-card.active .subtitle-source {
+  font-size: 0.98rem;
   line-height: 1.45;
   font-weight: 800;
 }
 
-.subtitle-translation {
-  color: #b7c0ca;
-  font-size: 0.92rem;
-  line-height: 1.55;
+.subtitle-card.active .subtitle-translation {
+  font-size: 0.85rem;
+  line-height: 1.52;
 }
 
 .study-asset-actions {
@@ -812,7 +854,7 @@ button:disabled {
   background: rgba(255, 255, 255, 0.04);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1040px) {
   .study-modal {
     width: min(720px, calc(100vw - 1rem));
   }
@@ -857,6 +899,14 @@ button:disabled {
   }
 
   .subtitle-card {
-    min-height: 104px;
+    padding: 0.68rem;
+  }
+
+  .subtitle-source {
+    font-size: 0.88rem;
+  }
+
+  .subtitle-card.active .subtitle-source {
+    font-size: 0.92rem;
   }
 }

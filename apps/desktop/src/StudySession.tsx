@@ -158,7 +158,7 @@ function findNearestCueIndex(cues: SubtitleCue[], time: number): number {
 
 export function StudySession({ task, copiedPath, onOpenPath, onCopyPath }: StudySessionProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const subtitleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const subtitleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [data, setData] = useState<StudyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -241,6 +241,14 @@ export function StudySession({ task, copiedPath, onOpenPath, onCopyPath }: Study
   function skipCue(delta: number) {
     const nextIndex = Math.max(0, Math.min(cues.length - 1, (activeCueIndex >= 0 ? activeCueIndex : 0) + delta));
     seekToCue(nextIndex);
+  }
+
+  function handleCueKeyDown(event: React.KeyboardEvent<HTMLDivElement>, index: number) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    seekToCue(index);
   }
 
   function togglePlayback() {
@@ -356,18 +364,21 @@ export function StudySession({ task, copiedPath, onOpenPath, onCopyPath }: Study
 
         <section className="subtitle-panel" aria-label="同步字幕">
           {cues.map((cue, index) => (
-            <button
+            <div
               className={`subtitle-card ${index === activeCueIndex ? "active" : ""}`}
               key={cue.id}
+              role="button"
+              tabIndex={0}
               ref={(node) => {
                 subtitleRefs.current[cue.id] = node;
               }}
               onClick={() => seekToCue(index)}
+              onKeyDown={(event) => handleCueKeyDown(event, index)}
             >
               <span className="subtitle-time">{formatClock(cue.start)}</span>
               <span className="subtitle-source">{cue.source}</span>
               {cue.translation ? <span className="subtitle-translation">{cue.translation}</span> : null}
-            </button>
+            </div>
           ))}
         </section>
       </div>
