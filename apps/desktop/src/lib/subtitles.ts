@@ -98,13 +98,30 @@ function textLength(value = ""): number {
   return value.replace(/\s+/g, "").length;
 }
 
+function normalizeInlineText(text: string): string {
+  return text.replace(/\s*\n+\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function joinTextParts(parts: string[]): string {
+  return parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((joined, part) => {
+      if (!joined) {
+        return part;
+      }
+      const needsSpace = !/[\u4e00-\u9fff]$/.test(joined) && !/^[\u4e00-\u9fff]/.test(part);
+      return `${joined}${needsSpace ? " " : ""}${part}`.trim();
+    }, "");
+}
+
 function shouldSplitCue(cue: SubtitleCue): boolean {
   const duration = cue.end - cue.start;
   return duration > LONG_CUE_SECONDS || cue.source.length > LONG_SOURCE_TEXT || textLength(cue.translation) > LONG_TRANSLATED_TEXT;
 }
 
 function splitText(text: string, targetLength: number): string[] {
-  const normalized = text.replace(/\s*\n+\s*/g, " ").replace(/\s+/g, " ").trim();
+  const normalized = normalizeInlineText(text);
   if (!normalized || normalized.length <= targetLength) {
     return normalized ? [normalized] : [];
   }
@@ -130,18 +147,135 @@ function splitText(text: string, targetLength: number): string[] {
   return chunks;
 }
 
+function combineTextParts(parts: string[], targetCount: number): string[] {
+  if (parts.length <= targetCount) {
+    return parts;
+  }
+
+  const totalLength = parts.reduce((total, part) => total + textLength(part), 0);
+  const targetLength = Math.max(totalLength / targetCount, 1);
+  const combined: string[] = [];
+  let bucket: string[] = [];
+  let bucketLength = 0;
+
+  parts.forEach((part, index) => {
+    const remainingParts = parts.length - index;
+    const remainingBuckets = targetCount - combined.length;
+    const shouldFlush =
+      bucket.length > 0 &&
+      combined.length < targetCount - 1 &&
+      bucketLength + textLength(part) > targetLength &&
+      remainingParts >= remainingBuckets;
+
+    if (shouldFlush) {
+      combined.push(joinTextParts(bucket));
+      bucket = [];
+      bucketLength = 0;
+    }
+
+    bucket.push(part);
+    bucketLength += textLength(part);
+  });
+
+  if (bucket.length) {
+    combined.push(joinTextParts(bucket));
+  }
+
+  while (combined.length > targetCount) {
+    const tail = combined.pop();
+    if (!tail) {
+      break;
+    }
+    combined[combined.length - 1] = joinTextParts([combined[combined.length - 1], tail]);
+  }
+
+  return combined;
+}
+
+function splitTextPartOnce(part: string): [string, string] | null {
+  const normalized = normalizeInlineText(part);
+  if (normalized.length < 2) {
+    return null;
+  }
+
+  const middle = normalized.length / 2;
+  const strongCandidates: number[] = [];
+  const softCandidates: number[] = [];
+  const spaceCandidates: number[] = [];
+  for (let index = 1; index < normalized.length; index += 1) {
+    const previous = normalized[index - 1];
+    const current = normalized[index];
+    if (/[.!?。！？]/.test(previous)) {
+      strongCandidates.push(index);
+    } else if (/[,;:，、；：]/.test(previous)) {
+      softCandidates.push(index);
+    } else if (/\s/.test(current) || /\s/.test(previous)) {
+      spaceCandidates.push(index);
+    }
+  }
+
+  const lowerBound = Math.max(1, Math.floor(normalized.length * 0.2));
+  const upperBound = Math.min(normalized.length - 1, Math.ceil(normalized.length * 0.8));
+  const nearestMiddleCandidate = (candidates: number[]) =>
+    candidates
+      .filter((candidate) => candidate >= lowerBound && candidate <= upperBound)
+      .sort((left, right) => Math.abs(left - middle) - Math.abs(right - middle))[0];
+  const splitIndex =
+    nearestMiddleCandidate(strongCandidates) ??
+    nearestMiddleCandidate(softCandidates) ??
+    nearestMiddleCandidate(spaceCandidates) ??
+    Math.floor(middle);
+
+  const left = normalized.slice(0, splitIndex).trim();
+  const right = normalized.slice(splitIndex).trim();
+  return left && right ? [left, right] : null;
+}
+
+function resizeTextParts(text: string | undefined, parts: string[], targetCount: number): string[] {
+  const normalized = normalizeInlineText(text ?? "");
+  if (!normalized) {
+    return [];
+  }
+
+  let resized = parts.length ? parts : [normalized];
+  resized = resized.map((part) => normalizeInlineText(part)).filter(Boolean);
+
+  if (resized.length > targetCount) {
+    resized = combineTextParts(resized, targetCount);
+  }
+
+  while (resized.length < targetCount) {
+    const splitIndex = resized
+      .map((part, index) => ({ index, length: textLength(part) }))
+      .sort((left, right) => right.length - left.length)[0]?.index;
+    if (splitIndex === undefined) {
+      break;
+    }
+
+    const split = splitTextPartOnce(resized[splitIndex]);
+    if (!split) {
+      break;
+    }
+    resized.splice(splitIndex, 1, ...split);
+  }
+
+  return resized;
+}
+
 function splitCue(cue: SubtitleCue): SubtitleCue[] {
   if (!shouldSplitCue(cue)) {
     return [cue];
   }
 
-  const sourceParts = splitText(cue.source, 120);
-  const translationParts = cue.translation ? splitText(cue.translation, 72) : [];
-  const partCount = Math.max(sourceParts.length, translationParts.length, 1);
+  const initialSourceParts = splitText(cue.source, 120);
+  const initialTranslationParts = cue.translation ? splitText(cue.translation, 72) : [];
+  const partCount = Math.max(initialSourceParts.length, initialTranslationParts.length, 1);
   if (partCount <= 1) {
     return [cue];
   }
 
+  const sourceParts = resizeTextParts(cue.source, initialSourceParts, partCount);
+  const translationParts = resizeTextParts(cue.translation, initialTranslationParts, partCount);
   const duration = Math.max(cue.end - cue.start, 0.35);
   const weights = Array.from({ length: partCount }, (_, index) => {
     const sourceWeight = textLength(sourceParts[index]);
@@ -153,7 +287,7 @@ function splitCue(cue: SubtitleCue): SubtitleCue[] {
   let elapsedWeight = 0;
   return Array.from({ length: partCount }, (_, index) => {
     const source = sourceParts[index] ?? sourceParts[sourceParts.length - 1] ?? cue.source;
-    const translation = translationParts[index] ?? (index === 0 ? cue.translation : undefined);
+    const translation = cue.translation ? translationParts[index] ?? translationParts[translationParts.length - 1] ?? cue.translation : undefined;
     const isLast = index === partCount - 1;
     const start = cue.start + (duration * elapsedWeight) / totalWeight;
     elapsedWeight += weights[index];
