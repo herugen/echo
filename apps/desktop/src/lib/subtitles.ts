@@ -105,6 +105,31 @@ export function srtToWebVtt(text: string): string {
   return ["WEBVTT", "", ...blocks].join("\n\n");
 }
 
+export function subtitleCuesToWebVtt(cues: SubtitleCue[], trackId: "source" | "translated" | "bilingual"): string {
+  const blocks = cues.flatMap((cue) => {
+    const lines = [
+      trackId !== "translated" ? cue.source : undefined,
+      trackId !== "source" ? cue.translation : undefined,
+    ]
+      .flatMap((line) => line?.split("\n") ?? [])
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (!lines.length) {
+      return [];
+    }
+
+    return [
+      [
+        `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}`,
+        ...lines,
+      ].join("\n"),
+    ];
+  });
+
+  return blocks.length ? ["WEBVTT", "", ...blocks].join("\n\n") : "";
+}
+
 function findMatchingCue(cues: ParsedCue[], sourceCue: ParsedCue, index: number): ParsedCue | undefined {
   const byTime = cues.find((cue) => Math.abs(cue.start - sourceCue.start) < 0.35);
   return byTime ?? cues[index];

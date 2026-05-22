@@ -62,6 +62,10 @@ function isTextField(target: EventTarget | null): target is HTMLInputElement | H
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
 
+function canDeleteTask(task: TaskSummary): boolean {
+  return task.status !== "running";
+}
+
 type TaskFilter = "all" | "active" | "ready" | "failed";
 type AppIconName = "file" | "link" | "settings" | "play" | "folder" | "copy" | "retry" | "pause" | "trash";
 
@@ -509,6 +513,12 @@ function App() {
                           重试
                         </button>
                       ) : null}
+                      {canDeleteTask(task) ? (
+                        <button className="mini-button danger" onClick={(event) => { event.stopPropagation(); void handleDeleteTask(task.id); }}>
+                          <AppIcon name="trash" />
+                          删除
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 );
@@ -563,7 +573,7 @@ function App() {
                   <AppIcon name="copy" />
                   {copiedPath === (focusTask.outputDir ?? focusTask.assetDir) ? "已复制" : "复制路径"}
                 </button>
-                {focusTask.status === "draft" || focusTask.status === "paused" || focusTask.status === "failed" ? (
+                {canDeleteTask(focusTask) ? (
                   <button className="secondary danger" onClick={() => void handleDeleteTask(focusTask.id)}>
                     <AppIcon name="trash" />
                     删除

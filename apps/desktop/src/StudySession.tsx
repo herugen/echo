@@ -6,7 +6,7 @@ import type { TextTrackInit } from "vidstack";
 import "vidstack/styles/defaults.css";
 import "vidstack/styles/ui/captions.css";
 import { backend } from "./lib/backend";
-import { formatClock, mergeSubtitleTracks, srtToWebVtt } from "./lib/subtitles";
+import { formatClock, mergeSubtitleTracks, subtitleCuesToWebVtt } from "./lib/subtitles";
 import type { SubtitleCue, TaskSummary } from "./types";
 
 type IconName =
@@ -28,7 +28,6 @@ interface CaptionTrackSource {
   label: string;
   language: string;
   path?: string;
-  text: string;
 }
 
 interface StudyData {
@@ -218,25 +217,28 @@ function buildCaptionTracks(
       label: "双语字幕",
       language: "zh-CN",
       path: paths.bilingualSubtitlePath,
-      text: bilingualText,
     },
     {
       id: "source",
       label: "原文字幕",
       language: "en",
       path: paths.sourceSubtitlePath,
-      text: sourceText,
     },
     {
       id: "translated",
       label: "译文字幕",
       language: "zh-CN",
       path: paths.translatedSubtitlePath,
-      text: translatedText,
     },
   ];
 
-  return tracks.filter((track) => track.path && track.text.trim());
+  const hasText: Record<CaptionFileTrackId, boolean> = {
+    bilingual: !!bilingualText.trim(),
+    source: !!sourceText.trim(),
+    translated: !!translatedText.trim(),
+  };
+
+  return tracks.filter((track) => track.path && hasText[track.id]);
 }
 
 function getDefaultCaptionId(tracks: CaptionTrackSource[]): CaptionTrackId {
@@ -359,7 +361,7 @@ export function StudySession({ task }: StudySessionProps) {
   const vidstackTextTracks = useMemo<TextTrackInit[]>(() => {
     const defaultCaptionId = getDefaultCaptionId(captionTracks);
     return captionTracks.flatMap((track) => {
-      const vtt = srtToWebVtt(track.text);
+      const vtt = subtitleCuesToWebVtt(cues, track.id);
       if (!vtt) {
         return [];
       }
@@ -375,7 +377,7 @@ export function StudySession({ task }: StudySessionProps) {
         },
       ];
     });
-  }, [captionTracks]);
+  }, [captionTracks, cues]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
