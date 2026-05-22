@@ -1,16 +1,18 @@
 # Echo
 
-A local-first bilingual video learning workbench.
+A local-first video hub for playback-first bilingual media.
 
-Echo turns local files or online videos into durable learning assets: source media,
-transcripts, translated subtitles, bilingual subtitle files, final videos, and a
-focused playback session for reviewing the result sentence by sentence.
+Echo turns local files or online videos into a browsable local media library:
+video files, transcripts, translated subtitles, bilingual subtitle files, final
+outputs, metadata, and a playback experience that opens directly from each video
+card.
 
 Current MVP direction:
 - Tauri desktop app for macOS, Linux, and Windows
 - Local Python engine for video acquisition, transcription, translation, and output
-- Study playback for processed tasks, not a general media library or media center
-- Local-first assets: source media, transcripts, subtitles, final outputs, and manifests
+- Playback-first local video library inspired by familiar video-site browsing patterns
+- Import and URL download as supporting actions, not the main screen
+- Local-first assets: source media, metadata, thumbnails, transcripts, subtitles, final outputs, and manifests
 - Architecture keeps room for a future CLI host without building one now
 
 ## Repository layout

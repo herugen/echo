@@ -24,6 +24,13 @@ export interface TaskSummary {
   assetDir: string;
   progress: number;
   stages?: StageSummary[];
+  sourceLabel?: string;
+  description?: string;
+  durationSeconds?: number;
+  durationLabel?: string;
+  addedLabel?: string;
+  resolutionLabel?: string;
+  thumbnailKind?: string;
 }
 
 export interface SubtitleCue {

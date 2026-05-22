@@ -1,7 +1,7 @@
 [package]
 name = "echo-desktop"
-version = "0.1.2"
-description = "Echo local video processing desktop app"
+version = "0.2.0"
+description = "Echo local video hub desktop app"
 authors = ["Herugen"]
 edition = "2021"
 

@@ -75,15 +75,22 @@ function shouldShowStudyPreview(): boolean {
   return typeof window !== "undefined" && new URLSearchParams(window.location.search).get("studyPreview") === "1";
 }
 
-function previewTask(): TaskSummary {
+function previewTask(overrides: Partial<TaskSummary> = {}): TaskSummary {
+  const id = overrides.id ?? "browser-preview-study";
   return {
-    id: "browser-preview-study",
+    id,
     title: "Echo Vidstack Preview",
     status: "succeeded",
     stageLabel: "finalize_video",
     detail: "浏览器预览演示任务",
-    assetDir: "preview://echo",
+    assetDir: `preview://${id}`,
     progress: 1,
+    sourceLabel: "Echo Preview",
+    description: "逐句播放、双语字幕、短句学习卡片都已准备好。",
+    durationSeconds: 5,
+    addedLabel: "刚刚",
+    resolutionLabel: "1080p",
+    thumbnailKind: "studio",
     stages: [
       {
         name: "acquire_input",
@@ -112,7 +119,125 @@ function previewTask(): TaskSummary {
         artifacts: [],
       },
     ],
+    ...overrides,
   };
+}
+
+function previewLibrary(): TaskSummary[] {
+  return [
+    previewTask({
+      id: "preview-nba-highlights",
+      title: "4 CAVALIERS at 3 KNICKS FULL GAME 1 HIGHLIGHTS",
+      sourceLabel: "NBA",
+      description: "东部季后赛焦点战，已生成短句双语字幕和本地播放资产。",
+      durationSeconds: 1051,
+      addedLabel: "5天前",
+      resolutionLabel: "1080p",
+      thumbnailKind: "sports",
+    }),
+    previewTask({
+      id: "preview-gtc-keynote",
+      title: "英伟达 NVIDIA GTC 2024 主题演讲",
+      sourceLabel: "NVIDIA 官方频道",
+      description: "AI 与计算平台更新摘要，适合逐句复习术语表达。",
+      durationSeconds: 5652,
+      addedLabel: "2天前",
+      resolutionLabel: "1080p",
+      thumbnailKind: "studio",
+    }),
+    previewTask({
+      id: "preview-ice-road",
+      title: "冰岛环岛公路旅行完整记录",
+      sourceLabel: "旅行者小林",
+      description: "10 天游记，字幕已切分为短句，适合影像听力输入。",
+      durationSeconds: 1427,
+      addedLabel: "3天前",
+      resolutionLabel: "4K",
+      thumbnailKind: "road",
+    }),
+    previewTask({
+      id: "preview-coffee-bgm",
+      title: "雨天咖啡馆爵士乐 - 放松与专注",
+      sourceLabel: "Cafe Music BGM channel",
+      description: "工作或学习背景音，本地缓存后可离线播放。",
+      durationSeconds: 10934,
+      addedLabel: "1周前",
+      resolutionLabel: "1080p",
+      thumbnailKind: "coffee",
+    }),
+    previewTask({
+      id: "preview-space",
+      title: "国际空间站：下一站火星？",
+      sourceLabel: "The Explorers",
+      description: "航天科普片段，适合保存到本地媒体库长期复看。",
+      durationSeconds: 2718,
+      addedLabel: "1周前",
+      resolutionLabel: "1080p",
+      thumbnailKind: "space",
+    }),
+    previewTask({
+      id: "preview-mit-linear",
+      title: "线性代数的本质（MIT 18.06）",
+      sourceLabel: "MIT OpenCourseWare",
+      description: "课程讲解向量空间与线性变换，中文字幕已生成。",
+      durationSeconds: 1716,
+      addedLabel: "2周前",
+      resolutionLabel: "720p",
+      thumbnailKind: "lecture",
+    }),
+    previewTask({
+      id: "preview-tokyo-night",
+      title: "东京夜游 4K - 新宿、涩谷、银座",
+      sourceLabel: "Vivid Japan",
+      description: "城市夜景和街头环境声，适合沉浸式观看。",
+      durationSeconds: 4122,
+      addedLabel: "2周前",
+      resolutionLabel: "4K",
+      thumbnailKind: "city",
+    }),
+    previewTask({
+      id: "preview-study-bgm",
+      title: "学习专注 | 白噪音 + 钢琴曲 2 小时",
+      sourceLabel: "自习室 BGM",
+      description: "提升专注力的轻音乐，适合离线循环播放。",
+      durationSeconds: 7200,
+      addedLabel: "3周前",
+      resolutionLabel: "1080p",
+      thumbnailKind: "focus",
+    }),
+    {
+      ...previewTask({
+        id: "preview-processing-wwdc",
+        title: "Apple WWDC 2024 - Keynote",
+        sourceLabel: "Apple",
+        description: "正在转写和生成双语字幕。",
+        durationSeconds: 5400,
+        addedLabel: "下载中",
+        resolutionLabel: "1080p",
+        thumbnailKind: "desktop",
+      }),
+      status: "running",
+      stageLabel: "translate_segments",
+      progress: 0.73,
+      detail: "处理中 · 剩余约 3 分钟",
+    },
+    {
+      ...previewTask({
+        id: "preview-processing-deepmind",
+        title: "DeepMind 最新研究：AI 推理的未来",
+        sourceLabel: "DeepMind",
+        description: "正在获取视频和元数据。",
+        durationSeconds: 3180,
+        addedLabel: "下载中",
+        resolutionLabel: "1080p",
+        thumbnailKind: "studio",
+      }),
+      status: "running",
+      stageLabel: "acquire_input",
+      progress: 0.42,
+      detail: "下载中 · 12.4 MB/s · 剩余 5 分钟",
+    },
+  ];
 }
 
 class TauriBackend implements DesktopBackend {
@@ -244,7 +369,7 @@ class BrowserPreviewBackend implements DesktopBackend {
   }
 
   async listTasks(): Promise<TaskSummary[]> {
-    return shouldShowStudyPreview() ? [previewTask()] : [];
+    return shouldShowStudyPreview() ? previewLibrary() : [];
   }
 }
 

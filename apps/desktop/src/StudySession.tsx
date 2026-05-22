@@ -42,6 +42,7 @@ interface StudyData {
 
 interface StudySessionProps {
   task: TaskSummary;
+  autoPlay?: boolean;
 }
 
 type VidstackDetailEvent<T> = Event & { detail: T };
@@ -287,7 +288,7 @@ function findNearestCueIndex(cues: SubtitleCue[], time: number): number {
   return previous;
 }
 
-export function StudySession({ task }: StudySessionProps) {
+export function StudySession({ task, autoPlay = false }: StudySessionProps) {
   const playerRef = useRef<StudyMediaPlayerElement | null>(null);
   const videoFrameRef = useRef<HTMLDivElement | null>(null);
   const subtitleRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -344,6 +345,16 @@ export function StudySession({ task }: StudySessionProps) {
       playerRef.current.playbackRate = playbackRate;
     }
   }, [playbackRate, data?.videoUrl]);
+
+  useEffect(() => {
+    if (!autoPlay || !data?.videoUrl) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      playVideo();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [autoPlay, data?.videoUrl]);
 
   const cues = data?.cues ?? EMPTY_CUES;
   const captionTracks = data?.captionTracks ?? EMPTY_CAPTION_TRACKS;
